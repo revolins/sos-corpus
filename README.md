@@ -186,6 +186,6 @@ The underlying content of the corpus (speeches and remarks by U.S. Secretaries o
 
 ## Contact
 
-[Benjamin Yoel](https://benjaminyoel.com) - Postdoctoral Fellow, CDDRL, Stanford University (PhD, Michigan State University): benyoel@stanford.edu
+[Benjamin Yoel](https://benjaminyoel.com) - Postdoctoral Fellow, CDDRL, Stanford University (PhD, MSU): benyoel@stanford.edu
 
 [Jay Revolinsky](https://revolins.github.io/) - Computer Science PhD Student, Michigan State University: revolins@msu.edu
