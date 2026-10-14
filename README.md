@@ -161,7 +161,7 @@ If you use this corpus in research, please cite:
 
 **BibTeX:**
 ```bibtex
-@dataset{yoel2026sos,
+@article{yoel2026sos,
   author={Yoel, Benjamin and Revolinsky, Jay},
   title={Introducing the United States Secretary of State Speech Corpus},
   year={2026},
