@@ -45,8 +45,6 @@ print(df.shape)  # e.g. (17701, 19)
 
 The [`sosspeech`](https://github.com/revolins/sos-corpus/tree/main/r-package) R package provides a convenient way to download and load the Secretary of State speech corpus directly into R. The package includes compressed data files, so you do not need to download the CSV separately.
 
-#### Install
-
 Install the package directly from GitHub:
 
 ```r
