@@ -2,7 +2,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/revolins/sos-corpus?label=corpus)](https://github.com/revolins/sos-corpus/releases/latest)
 [![Weekly update](https://github.com/revolins/sos-corpus/actions/workflows/rubio-update.yml/badge.svg)](https://github.com/revolins/sos-corpus/actions/workflows/rubio-update.yml)
-[![PyPI](https://img.shields.io/pypi/v/sos-speeches)](https://pypi.org/project/sos-speeches/)
+[![PyPI](https://img.shields.io/pypi/v/sos-speeches?cacheSeconds=3600)](https://pypi.org/project/sos-speeches/)
 [![PyPI package](https://github.com/revolins/sos-corpus/actions/workflows/check-pypi.yml/badge.svg)](https://github.com/revolins/sos-corpus/actions/workflows/check-pypi.yml)
 [![R package](https://github.com/revolins/sos-corpus/actions/workflows/check-r.yml/badge.svg)](https://github.com/revolins/sos-corpus/actions/workflows/check-r.yml)
 [![Hugging Face dataset](https://github.com/revolins/sos-corpus/actions/workflows/check-hf.yml/badge.svg)](https://github.com/revolins/sos-corpus/actions/workflows/check-hf.yml)
