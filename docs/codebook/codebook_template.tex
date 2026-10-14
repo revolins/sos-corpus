@@ -1,0 +1,233 @@
+% Template for scripts/build_codebook.py. Double-angle-bracket markers are filled from the corpus
+% CSV on every build; everything else is fixed text. Edit wording here, not in a generated .tex.
+\documentclass[10pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=0.9in]{geometry}
+\usepackage{booktabs,longtable,array,tabularx}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\let\olditemize\itemize
+\renewcommand{\itemize}{\olditemize\setlength{\itemsep}{1pt}\setlength{\parskip}{0pt}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\renewcommand{\arraystretch}{1.18}
+\newcommand{\col}[1]{\texttt{#1}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\pagestyle{myheadings}
+\markright{\small U.S. Secretary of State Speech Corpus --- Codebook, release <<VERSION>>}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\bfseries U.S. Secretary of State Speech Corpus}\\[0.4em]
+{\Large Codebook for the dataset columns}\\[0.6em]
+{\normalsize Reference release \textbf{<<VERSION>>} \quad$\cdot$\quad <<N_ROWS>> rows \quad$\cdot$\quad <<N_COLS>> columns \quad$\cdot$\quad <<DATE_MIN>> to <<DATE_MAX>>}
+\end{center}
+
+\section*{1\quad The dataset in brief}
+
+Each row is one public statement by a U.S.\ Secretary of State: a speech,
+remarks, interview, press availability, testimony, press statement or op-ed,
+collected from \texttt{state.gov} and its archived sites
+(\texttt{1997-2001.state.gov} through \texttt{2021-2025.state.gov}).
+The corpus covers <<SEC_FIRST>> through <<SEC_LAST>>. New Rubio material is added by a weekly
+automated update, and each update is published as a new versioned release.
+
+There are 19 columns. Ten \emph{base} columns describe the document and hold its
+text (Section~3). Nine \emph{derived} columns are computed from the base columns by a
+separate enrichment stage (Section~4). The enrichment stage never changes a base
+column; the release verifier checks this (Check~Q).
+
+\paragraph{File format.} One UTF-8 CSV file with a header row and standard
+double-quote escaping (RFC~4180). The text fields contain line breaks inside
+quoted values, so read the file with a real CSV parser, not line by line. Some
+fields are very long (the largest \col{Raw Text} is over <<RAW_MAX_CHARS>> characters), so
+raise the parser's field-size limit:
+\begin{itemize}
+\item Python \texttt{csv}: call \texttt{csv.field\_size\_limit(10**8)}.
+\item pandas: \texttt{pd.read\_csv(path, dtype=str, keep\_default\_na=False)} keeps
+empty list columns as empty strings rather than \texttt{NaN}.
+\item R: \texttt{readr::read\_csv(path)} handles embedded newlines.
+\end{itemize}
+Each release ships with a sidecar file, \texttt{<file>.manifest.json}. It records
+the row count, the column order, the SHA-256 of the CSV, and a fingerprint of every
+row's \col{Row Hash} (Section~5).
+
+\paragraph{List-valued columns.} Five derived columns hold lists. Items are
+joined by a semicolon and a space (\texttt{"; "}), keep their order of first
+appearance, and contain no duplicates within a row. An empty string means the
+list is empty. It does not mean the value is missing.
+
+\paragraph{Which text column to use.}
+\begin{itemize}
+\item \col{SOS Text}: the Secretary's own words only. Use it for analyses of what the Secretary said.
+\item \col{Natural Text}: the whole cleaned document, with every speaker. Use it for context, or for the questions the Secretary was asked.
+\item \col{Raw Text}: the page as scraped. Use it only for provenance and auditing; it still contains site navigation and encoding errors.
+\end{itemize}
+
+\section*{2\quad Coverage}
+
+\begin{center}
+\begin{tabular}{lrll}
+\toprule
+\col{Secretary} & Rows & First date & Last date \\
+\midrule
+<<COVERAGE_ROWS>>
+\bottomrule
+\end{tabular}
+\end{center}
+{\small Tenures overlap by a few days because a Secretary-designate's confirmation
+testimony is dated before they were sworn in (e.g.\ <<OVERLAP_EXAMPLE>>). \col{Secretary} identifies who spoke, not who held the office on
+that date.}
+
+\section*{3\quad Base columns}
+
+\begin{longtable}{@{}L{1.25in}L{0.75in}L{4.35in}@{}}
+\toprule
+Column & Type & Definition and coding rules \\
+\midrule
+\endhead
+\col{Row Id} & integer & Row position, 0 to $N-1$, with no gaps. \textbf{Renumbered in every
+release}, so the same speech can have a different \col{Row Id} in another release.
+Use \col{URL} or \col{Row Hash} as a stable key across releases. \\
+\col{Secretary} & categorical & The speaking Secretary's last name: <<SEC_LIST>>. \\
+\col{Date} & date & \texttt{YYYY-MM-DD} (ISO 8601). The date of the statement as given on the page.
+When the page date and the URL's \texttt{/YYYY/MM/} path disagree and the page text gives a
+date that matches the URL month, that date is used. The verifier checks that no fixable
+mismatch remains. \\
+\col{Title} & string & The page title. The site suffix and any date prefix are removed,
+whitespace is normalised, and the first letter is capitalised. Not unique, because many
+statements share a generic title. \\
+\col{Speech Type} & categorical & One of <<N_TYPES>> controlled values. Row counts are in the table
+after this one. \\
+\col{Location} & string & Exactly one comma: \texttt{City, Region}. Region is a country, or a
+U.S.\ state for U.S.\ cities (e.g.\ \texttt{Beijing, China}; \texttt{New York City, New York}).
+The value is \texttt{Washington, D.C.} when the page itself gives a Washington newsroom origin
+(``Office of the Spokesperson/Spokesman'', ``Via Teleconference''), and also for
+statements given in Washington. A location the pipeline cannot resolve is \emph{not} given
+a default. The row is held back (quarantined) for manual review instead of being published.
+\texttt{Washington, D.C.} is <<WASH_PCT>>\% of rows. There are no ``En Route'' or non-geographic values. \\
+\col{URL} & string & The source URL exactly as first scraped. \textbf{Fixed once a row
+is released}: it is an input to \col{Row Hash}, so it is never rewritten even after the page
+moves. Use it to cite and trace a row's provenance. Some older pages may now be
+available only from the Internet Archive. \\
+\col{SOS Text} & text & Only the Secretary's own words. The text of other speakers
+(questioners, moderators, foreign ministers) is removed, as are speaker labels, site navigation and
+footers, ``Released on \ldots'' date stamps, document reference codes, audience-reaction notes
+such as \texttt{(Laughter.)} and \texttt{(Applause.)}, and \texttt{(inaudible)} markers.
+Encoding errors are repaired. For single-speaker documents (most press statements, many
+remarks), it is identical to \col{Natural Text}; this is true for <<SOS_EQ_NAT>> rows (<<SOS_EQ_NAT_PCT>>\%). \\
+\col{Natural Text} & text & The full cleaned document with \emph{all} speakers, in order.
+Speaker labels are \textbf{kept} (e.g.\ \texttt{SECRETARY KERRY:}, \texttt{QUESTION:}),
+so it can be split into turns. Site navigation and footer text are removed, and encoding
+errors are repaired. \\
+\col{Raw Text} & text & The page text as scraped, with no cleaning. It includes site
+navigation, archive banners and footers, and any encoding errors (e.g.\ the
+\texttt{\~{a}\textemdash\textemdash} separator that is removed from the two cleaned text fields). For a small set of
+rows whose original page was broken, this is the text of a re-fetched copy (the current page or
+an Internet Archive snapshot). Use it for provenance and auditing, not for analysis. \\
+\bottomrule
+\end{longtable}
+
+\begin{center}
+\small
+\begin{tabular}{lr@{\qquad}lr@{\qquad}lr}
+\toprule
+\col{Speech Type} & Rows & \col{Speech Type} & Rows & \col{Speech Type} & Rows \\
+\midrule
+<<SPEECH_TYPE_ROWS>>
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section*{4\quad Derived columns}
+
+These columns are added by the enrichment stage (\texttt{corpus\_enrich\_v1.py}).
+The last four columns before \col{Canonical URL} come from automatic named-entity
+recognition and \textbf{have not been reviewed by hand}. Treat them as approximate
+indexes for finding and filtering documents, not as validated measures.
+
+\begin{longtable}{@{}L{1.25in}L{0.75in}L{4.35in}@{}}
+\toprule
+Column & Type & Definition and coding rules \\
+\midrule
+\endhead
+\col{SOS Word Count} & integer & Number of whitespace-separated tokens in \col{SOS Text}
+(Python \texttt{len(text.split())}). Mean <<SOS_WC_MEAN>>, median <<SOS_WC_MEDIAN>>, range <<SOS_WC_MIN>>--<<SOS_WC_MAX>>. <<SOS_WC_SHORT>> rows have
+fewer than 20 words; these are flagged by the verifier but kept. \\
+\col{Natural Word Count} & integer & The same count for \col{Natural Text}. Mean <<NAT_WC_MEAN>>,
+median <<NAT_WC_MEDIAN>>. It is normally $\geq$ \col{SOS Word Count}. \\
+\col{Row Hash} & string & 64-character lowercase hex SHA-256 of nine fields:
+\col{Secretary}, \col{Date}, \col{Title}, \col{Speech Type}, \col{Location}, \col{URL},
+\col{SOS Text}, \col{Natural Text}, \col{Raw Text}. The fields are joined in that order by
+the unit separator \texttt{U+001F} and encoded as UTF-8. \col{Row Id} is excluded, so the
+hash stays the same when rows are renumbered. It changes if any listed field changes. Unique
+within a release. \\
+\col{Speakers Present} & list & Every distinct speaker in \col{Natural Text}, in order of
+first appearance. Never empty: the row's own Secretary is always included, by last name.
+Unnamed roles are shown as bracketed placeholders (<<SENTINELS>>, \ldots) so they are not mistaken for names. Named speakers appear as they are
+labelled in the transcript (usually by last name). Mean <<SPEAKERS_MEAN>> speakers per row. \\
+\col{People Mentioned (Natural Text)} & list & People \emph{referred to} anywhere in
+\col{Natural Text}, found by spaCy \texttt{en\_core\_web\_lg} PERSON entities. Names used
+only to address someone directly (``Thank you, Mr.\ Chairman'') are excluded by a set of
+rules. Names are as written: the same person can appear as a full name and as a surname
+(e.g.\ \texttt{Carl Bildt; Carl; Bildt}). Empty for <<PEOPLE_NAT_EMPTY>> rows. \\
+\col{People Mentioned (SOS Text)} & list & The subset of the previous column whose
+mentions fall inside the Secretary's own turns. This is always a subset of
+\col{People Mentioned (Natural Text)}. Empty for <<PEOPLE_SOS_EMPTY>> rows. \\
+\col{Countries Mentioned} & list & Countries named in \col{Natural Text}. spaCy GPE/LOC
+entities are mapped to a standard country name using a curated alias table, followed by an
+\emph{exact} match against ISO 3166 (no fuzzy matching). U.S.\ states and territories are
+mapped to \texttt{United States}. Some territories are listed separately (e.g.\ \texttt{Hong
+Kong}). Historical states are kept (\texttt{Soviet Union}, \texttt{Yugoslavia},
+\texttt{Czechoslovakia}). Mentions that cannot be resolved are dropped. Empty for <<COUNTRIES_EMPTY>> rows. \\
+\col{Country ISO Codes Mentioned} & list & ISO 3166-1 alpha-3 codes, \textbf{in the same
+positions} as \col{Countries Mentioned}: item $i$ is the code for country $i$. Where a
+country has no ISO code (<<NO_ISO_LIST>>), the code is
+\texttt{N/A}, so the two lists always have the same length. \\
+\col{Canonical URL} & string & Where the page is \emph{now}. It equals \col{URL} unless
+\texttt{state.gov} has since moved the page. In September 2026, for example,
+\texttt{/releases/office-of-the-spokesperson/} became \texttt{/releases/office-of-the-spokesman/};
+<<CANON_DIFF>> rows differ for this reason. It is not part of the hash, so it can be updated when the
+site changes again. Cite \col{URL}; use \col{Canonical URL} to fetch the live page. \\
+\bottomrule
+\end{longtable}
+
+\noindent\begin{minipage}{\linewidth}
+\paragraph{Example row} (Row Id <<EX_ROW_ID>> in <<VERSION>>; text fields shortened):
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}L{1.9in}X@{}}
+\toprule
+<<EXAMPLE_ROWS>>
+\bottomrule
+\end{tabularx}
+\end{center}
+\end{minipage}
+
+\section*{5\quad Integrity and verification}
+
+\begin{itemize}
+\item \textbf{Manifest.} \texttt{<file>.manifest.json} lists the row count, the column
+order, the SHA-256 of the CSV file (\texttt{csv\_sha256}) and a fingerprint of the whole
+dataset (a hash of every \col{Row Hash} in row order). For <<VERSION>> the file hash begins
+\texttt{<<SHA_HEAD>>} and ends \texttt{<<SHA_TAIL>>}. Compare it with \texttt{sha256sum} to confirm
+you have the exact file.
+\item \textbf{Row-level edits.} Recompute \col{Row Hash} with the formula in Section~4 to
+check that a row has not been changed since release.
+\item \textbf{Release verifier.} Every release must pass
+\texttt{scripts/corpus\_verify\_research\_grade.py} with no failures before it is published.
+The verifier checks the schema and controlled vocabularies, duplicates (by URL, by URL slug and
+date, and by content), leftover site text and encoding errors in the cleaned text fields,
+the \col{Location} format, that word counts and hashes match when recomputed, and the
+format and internal consistency of every derived column.
+\item \textbf{Patches.} A text fix applied after release changes \col{SOS Text} and
+\col{Natural Text} only. Each fix is listed in a patch audit file
+(\texttt{corpus\_v<version>\_patch\_audit.csv}) that is published with the release.
+\end{itemize}
+
+\end{document}

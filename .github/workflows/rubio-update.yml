@@ -1,0 +1,222 @@
+name: Rubio Corpus Update
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # every Monday 06:00 UTC
+  workflow_dispatch:        # allow manual trigger from GitHub UI
+    inputs:
+      full_rescan:
+        description: 'Walk the whole archive instead of only what is new (slow; use after a normalization change or to re-add quarantined rows)'
+        type: boolean
+        default: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    # A healthy run takes ~5 min. state.gov outages have stretched discovery
+    # to 26 min (2026-10-12); past this, something is wrong -- fail and let
+    # next week's --since buffer re-cover the window.
+    timeout-minutes: 45
+    permissions:
+      contents: write       # needed to create GitHub Releases
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip downloads (incl. spaCy model wheel)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          # Bump the "v1" suffix if requirements.txt's spaCy/model versions
+          # change and the cache should be invalidated deliberately;
+          # otherwise this key is stable so the weekly run reuses cached
+          # wheels instead of re-downloading the ~400MB en_core_web_lg
+          # model every Monday.
+          key: pip-${{ runner.os }}-py3.11-v1-${{ hashFiles('scripts/requirements.txt') }}
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      # Fail in seconds, before the scrape and before a release is cut.
+      # On 2026-10-12 a broken parquet engine surfaced only in the very last
+      # step, AFTER the GitHub release had been published -- so the release
+      # and the Hugging Face mirror ended up out of sync.
+      - name: Preflight publish dependencies
+        run: python scripts/publish_hf.py --check-deps
+
+      - name: Download spaCy model (en_core_web_lg)
+        run: python -m spacy download en_core_web_lg
+
+      - name: Download latest corpus release
+        run: |
+          mkdir -p data
+          # Download the most recent corpus CSV asset from GitHub Releases.
+          # The asset is always named corpus_v*.csv — rename to corpus.csv locally.
+          gh release download \
+            --pattern "corpus_v*.csv" \
+            --dir data/ \
+            --clobber
+          # Rename whichever versioned file was downloaded to a stable local name.
+          mv data/corpus_v*.csv data/corpus.csv
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Resolve the discovery floor with the scraper's own logic rather than
+      # re-deriving it in YAML -- it already reads the corpus and knows the
+      # latest stored date for the secretary.
+      - name: Compute incremental scrape cutoff
+        id: cutoff
+        run: |
+          python scripts/rubio_backfill.py \
+            --enriched data/corpus.csv \
+            --print-since
+
+      - name: Discover and fetch new Rubio speeches
+        run: |
+          python scripts/rubio_backfill.py \
+            --enriched data/corpus.csv \
+            --output   data/rubio_new.csv \
+            ${{ github.event.inputs.full_rescan == 'true' && '--full-rescan' || format('--since {0}', steps.cutoff.outputs.since) }}
+
+      - name: Count new rows
+        id: check
+        run: |
+          NEW=$(python - <<'EOF'
+          import csv, sys
+          csv.field_size_limit(10**8)
+          try:
+              with open('data/rubio_new.csv', newline='', encoding='utf-8') as f:
+                  rows = list(csv.DictReader(f))
+              print(len(rows))
+          except FileNotFoundError:
+              print(0)
+          EOF
+          )
+          echo "new_rows=$NEW" >> "$GITHUB_OUTPUT"
+          echo "Found $NEW new Rubio rows."
+
+      - name: Merge, clean, and verify
+        if: steps.check.outputs.new_rows != '0'
+        run: |
+          python scripts/corpus_rubio_update.py \
+            --corpus   data/corpus.csv \
+            --backfill data/rubio_new.csv \
+            --output   data/corpus_updated.csv \
+            --max-gap-days 90
+
+      - name: Check merge output
+        id: merge_check
+        if: steps.check.outputs.new_rows != '0'
+        run: |
+          # The scraper's "new rows" count is an upper bound, not a decision.
+          # corpus_rubio_update.py re-runs dedup with rename-proof keys and
+          # ALSO quarantines any row whose Location cannot be normalized, so
+          # it can legitimately end up with nothing to merge — in which case
+          # it exits 0 without writing output. Gate downstream steps on
+          # whether a merged file actually exists, not on the scraper's count.
+          #
+          # If the scraper reports many new rows and this finds none, read the
+          # merge log: a large "slug+date" rejection tally means state.gov has
+          # renamed a path segment (that is what happened on 2026-09-21, when
+          # 609 already-collected speeches came back looking brand new).
+          if [ -f data/corpus_updated.csv ]; then
+            OLD=$(python -c "import csv; csv.field_size_limit(10**8); print(sum(1 for _ in csv.DictReader(open('data/corpus.csv', encoding='utf-8'))))")
+            NEW_TOTAL=$(python -c "import csv; csv.field_size_limit(10**8); print(sum(1 for _ in csv.DictReader(open('data/corpus_updated.csv', encoding='utf-8'))))")
+            echo "merged=true" >> "$GITHUB_OUTPUT"
+            echo "actual_new=$((NEW_TOTAL - OLD))" >> "$GITHUB_OUTPUT"
+          else
+            echo "merged=false" >> "$GITHUB_OUTPUT"
+            echo "Scraper found candidate URLs not already in the corpus by its own canonicalization, but corpus_rubio_update.py's stricter URL dedup determined none were genuinely new (likely a www./case-only difference). Nothing to publish."
+          fi
+
+      # Without this the sidecars die with the runner, and quarantining a row
+      # instead of fabricating a Location would be an invisible drop.
+      - name: Upload audit sidecars
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rubio-update-audit
+          if-no-files-found: ignore
+          retention-days: 90
+          path: |
+            data/rubio_unresolved_location.csv
+            data/rubio_update_people_mention_audit.csv
+            data/rubio_update_unresolved_gpe_audit.csv
+
+      - name: Release tag
+        id: tag
+        if: steps.merge_check.outputs.merged == 'true'
+        run: echo "tag=v$(date -u +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+
+      # Codebook PDF: fixed wording from docs/codebook/codebook_template.tex,
+      # statistics recomputed from this release's CSV. Best-effort -- a LaTeX
+      # problem must never hold back a verified data release, so the publish
+      # step attaches the PDF only if it was built. LaTeX comes from Ubuntu's
+      # own packages; build_codebook.py compiles with pdflatex.
+      - name: Build codebook
+        if: steps.merge_check.outputs.merged == 'true'
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base texlive-latex-recommended texlive-latex-extra \
+            texlive-fonts-recommended lmodern
+          python scripts/build_codebook.py \
+            --input   data/corpus_updated.csv \
+            --version "${{ steps.tag.outputs.tag }}" \
+            --out     "data/codebook_${{ steps.tag.outputs.tag }}.pdf"
+
+      - name: Publish new release (GitHub)
+        if: steps.merge_check.outputs.merged == 'true'
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          NEW="${{ steps.merge_check.outputs.actual_new }}"
+          QUARANTINED=0
+          if [ -f data/rubio_unresolved_location.csv ]; then
+            QUARANTINED=$(( $(wc -l < data/rubio_unresolved_location.csv) - 1 ))
+            [ "$QUARANTINED" -lt 0 ] && QUARANTINED=0
+          fi
+          NOTES="Automated weekly update: ${NEW} new Rubio speeches added and verified."
+          if [ "$QUARANTINED" -gt 0 ]; then
+            NOTES="${NOTES} ${QUARANTINED} row(s) quarantined for an unresolvable Location and NOT included — see the rubio-update-audit artifact on this run."
+          fi
+          # gh release create's `file#label` syntax only sets a cosmetic display
+          # label — it does NOT rename the uploaded asset. The actual asset
+          # filename must match corpus_v*.csv (what the next run's `gh release
+          # download --pattern` looks for), so rename the local file first.
+          cp "data/corpus_updated.csv" "data/corpus_${TAG}.csv"
+          ASSETS=("data/corpus_${TAG}.csv")
+          if [ -f "data/codebook_${TAG}.pdf" ]; then
+            ASSETS+=("data/codebook_${TAG}.pdf")
+          else
+            NOTES="${NOTES} Codebook PDF not attached (build failed; see the Build codebook step)."
+          fi
+          gh release create "$TAG" \
+            "${ASSETS[@]}" \
+            --title "SOS Corpus ${TAG} (${NEW} new Rubio rows)" \
+            --notes "${NOTES}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to Hugging Face Hub
+        if: steps.merge_check.outputs.merged == 'true'
+        run: |
+          # No pip install here: huggingface_hub/pandas/pyarrow are in
+          # scripts/requirements.txt so they resolve against the rest of the
+          # environment. Installing them late let pip pick a pyarrow wheel
+          # incompatible with the numpy already present (2026-10-12).
+          python scripts/publish_hf.py \
+            --csv data/corpus_updated.csv \
+            --commit-message "Weekly update: ${{ steps.merge_check.outputs.actual_new }} new Rubio rows"
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+      - name: No new speeches found
+        if: steps.check.outputs.new_rows == '0' || steps.merge_check.outputs.merged == 'false'
+        run: echo "No new Rubio speeches found this week — corpus unchanged."

@@ -1,0 +1,73 @@
+name: Publish to Hugging Face
+
+# Re-sync the Hugging Face mirror from an existing GitHub release, without
+# scraping or cutting a new release. Use it when the weekly run's final
+# "Publish to Hugging Face Hub" step failed after the GitHub release was
+# already published (as on 2026-10-12): a week with no new speeches skips
+# that step entirely, so without this the mirror stays behind indefinitely.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish, e.g. v2026.10.12 (blank = latest release)'
+        required: false
+        default: ''
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.11-v1-${{ hashFiles('scripts/requirements.txt') }}
+
+      # Same requirements file as the weekly job, so a dependency problem
+      # reproduces here too -- and is caught by the preflight below before
+      # anything is uploaded.
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Preflight publish dependencies
+        run: python scripts/publish_hf.py --check-deps
+
+      - name: Download release CSV
+        id: release
+        run: |
+          # The tag arrives via env, not ${{ }} interpolation, so a crafted
+          # input can't inject shell commands into this step.
+          TAG="$INPUT_TAG"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --json tagName --jq .tagName)
+          fi
+          mkdir -p data
+          gh release download "$TAG" --pattern "corpus_v*.csv" --dir data/ --clobber
+          mv data/corpus_v*.csv data/corpus.csv
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Publishing $TAG"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+
+      - name: Publish to Hugging Face Hub
+        run: |
+          python scripts/publish_hf.py \
+            --csv data/corpus.csv \
+            --commit-message "Sync $RELEASE_TAG from GitHub release"
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}

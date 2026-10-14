@@ -1,0 +1,56 @@
+name: R package
+
+# Installs the sosspeech R package from GitHub, exactly as the README tells
+# users to, then loads the bundled corpus and runs the package tests.
+# Drives the README badge.
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['r-package/**', '.github/workflows/check-r.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # remotes::install_github authenticates with this (needed while the
+      # repo is private; harmless once public).
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Install from GitHub
+        run: |
+          install.packages(c("remotes", "testthat"))
+          remotes::install_github("${{ github.repository }}", subdir = "r-package",
+                                  ref = "${{ github.sha }}", upgrade = "never")
+        shell: Rscript {0}
+
+      - name: Load the corpus
+        run: |
+          library(sosspeech)
+          x <- sos_load()
+          cat("rows:", nrow(x), " cols:", ncol(x), "\n")
+          stopifnot(is.data.frame(x), nrow(x) > 17000, ncol(x) == 19,
+                    inherits(x$date, "Date"), !anyDuplicated(x$row_hash))
+          y <- sos_load(years = 2020)
+          stopifnot(nrow(y) > 0, all(format(y$date, "%Y") == "2020"))
+          cat("OK\n")
+        shell: Rscript {0}
+
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: r-package/tests
+
+      - name: Package tests
+        run: testthat::test_dir("r-package/tests/testthat", package = "sosspeech", load_package = "installed", stop_on_failure = TRUE)
+        shell: Rscript {0}

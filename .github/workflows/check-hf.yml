@@ -1,0 +1,52 @@
+name: Hugging Face dataset
+
+# Downloads the Hugging Face mirror anonymously (as a user would) and checks
+# it is in sync with the latest GitHub release: same row count, same Row
+# Hashes. Drives the README badge. Runs after the Monday corpus update.
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install
+        run: pip install huggingface_hub pandas pyarrow
+
+      - name: Download latest GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" --pattern "corpus_v*.csv" --dir release
+
+      - name: Compare with the Hugging Face mirror
+        shell: python
+        run: |
+          import csv, glob, os
+          import pandas as pd
+          from huggingface_hub import hf_hub_download
+          # No token: the check must pass for an anonymous user.
+          path = hf_hub_download('JayRevolinsky/sos-secretary-speeches',
+                                 'corpus.parquet', repo_type='dataset', token=False)
+          hf = pd.read_parquet(path)
+          csv.field_size_limit(10 ** 8)
+          gh = pd.read_csv(glob.glob('release/corpus_v*.csv')[0], dtype=str,
+                           keep_default_na=False)
+          print(f"HF: {hf.shape}  GitHub {os.environ['TAG']}: {gh.shape}")
+          assert list(hf.columns) == list(gh.columns), 'column mismatch'
+          assert len(hf) == len(gh), 'row count differs -- run "Publish to Hugging Face"'
+          assert set(hf['Row Hash']) == set(gh['Row Hash']), 'content differs -- run "Publish to Hugging Face"'
+          print('OK: in sync')

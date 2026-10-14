@@ -1,0 +1,44 @@
+name: PyPI package
+
+# Installs the published sos-speeches package from PyPI, exactly as a user
+# would, and loads the latest corpus release through it. Drives the README
+# badge. Runs after the Monday 06:00 UTC corpus update.
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install from PyPI
+        run: pip install "sos-speeches[pandas]"
+
+      - name: Load the latest release
+        shell: python
+        run: |
+          import sos_speeches
+          print('sos-speeches', sos_speeches.__version__)
+          df = sos_speeches.load(as_dataframe=True)
+          print('shape', df.shape)
+          expected = {
+              'Row Id', 'Secretary', 'Date', 'Title', 'Speech Type', 'Location',
+              'URL', 'SOS Text', 'Natural Text', 'Raw Text', 'SOS Word Count',
+              'Natural Word Count', 'Row Hash', 'Speakers Present',
+              'People Mentioned (Natural Text)', 'People Mentioned (SOS Text)',
+              'Countries Mentioned', 'Country ISO Codes Mentioned', 'Canonical URL',
+          }
+          assert set(df.columns) == expected, sorted(set(df.columns) ^ expected)
+          assert len(df) > 17000, f'only {len(df)} rows'
+          assert df['Row Hash'].is_unique, 'duplicate Row Hash'
+          print('OK')

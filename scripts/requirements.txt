@@ -1,0 +1,31 @@
+# Weekly Rubio pipeline ONLY (.github/workflows/rubio-update.yml).
+#
+# Keep the STM / analysis stack out of this file -- it lives in
+# requirements-analysis.txt. tomotopy 0.13.0 pins numpy<2, and while it was
+# listed here CI resolved numpy 1.26.4; the Hugging Face step then installed a
+# pyarrow built against the numpy 2 ABI, so `import pyarrow` failed and pandas
+# reported it as the misleading "Unable to find a usable engine for parquet"
+# (2026-10-12 -- the release was already cut, leaving the HF mirror behind).
+# Anything added here must be something the pipeline actually imports.
+
+# rubio_backfill.py / corpus_finalize_v4_30.py: discovery and page fetch
+requests
+beautifulsoup4
+charset-normalizer
+tqdm
+ftfy
+
+# corpus_enrich_v1.py Phase 3-4: People/Countries Mentioned NER
+# NOTE: installing spacy does NOT install a model -- the workflow also runs
+#   python -m spacy download en_core_web_lg
+# separately (models aren't pip packages resolvable from this file alone).
+spacy>=3.8
+pycountry>=23.12
+
+# publish_hf.py: CSV -> Parquet mirror + upload. These belong here, resolved
+# together with everything else, rather than pip-installed in a later
+# workflow step where they cannot be constrained against what is already in
+# the environment.
+pandas>=2.1
+pyarrow>=13.0.0
+huggingface_hub>=0.23

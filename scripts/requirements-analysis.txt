@@ -1,0 +1,20 @@
+# Offline research / analysis stack -- NOT used by the weekly pipeline.
+#
+# Structural topic modeling scripts (STM.R/py, STM_nodiplospeak.*,
+# stm_python_common.py) and the stance/alignment studies. Install locally:
+#   pip install -r scripts/requirements-analysis.txt
+# Tested design target: Python 3.10-3.13
+#
+# Deliberately kept OUT of requirements.txt: tomotopy 0.13.0 pins numpy<2,
+# and when CI installed this file alongside the pipeline that cap silently
+# downgraded numpy, which broke `import pyarrow` in the Hugging Face publish
+# step on 2026-10-12. The pipeline must not inherit an analysis-only pin.
+numpy>=1.26
+pandas>=2.1
+matplotlib>=3.8
+scipy>=1.11
+scikit-learn>=1.4
+regex>=2024.5.15
+nltk>=3.8
+simplemma==1.2.0
+tomotopy==0.13.0

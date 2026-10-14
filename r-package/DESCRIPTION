@@ -1,0 +1,15 @@
+Package: sosspeech
+Title: US Secretary of State Speech Corpus
+Version: 0.0.0.9000
+Authors@R: 
+    person("Ben", "Yoel", , "benjaminyoel@gmail.com", role = c("aut", "cre"))
+Description: A corpus of speeches delivered by US Secretaries of State,
+    distributed as a tidy data frame with speech-level metadata and full text.
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Depends: R (>= 4.1.0)
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+License: MIT + file LICENSE
