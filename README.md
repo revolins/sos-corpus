@@ -9,7 +9,7 @@
 [![Code: MIT](https://img.shields.io/badge/code-MIT-blue)](https://github.com/revolins/sos-corpus/blob/main/LICENSE)
 [![Data: CC0](https://img.shields.io/badge/data-CC0%201.0-lightgrey)](https://github.com/revolins/sos-corpus/blob/main/DATA_LICENSE)
 
-The US Secretary of State Speech Dataset (USSOS Dataset) is a corpus of U.S. Secretary of State public communication from Madeline Albright (January 1997) through the present, with Rubio-era speeches updated automatically each week. Public communication that are featured in the dataset includes major addresses, public statements, interviews, and press conferences, among others. 
+The US Secretary of State Speech Dataset (USSOS Dataset) is a corpus of U.S. Secretary of State public communication from Madeleine Albright (January 1997) through the present (Marco Rubio), with Rubio-era speeches updated automatically each week. Public communication that are featured in the dataset includes major addresses, public statements, interviews, and press conferences, among others. 
 
 The dataset is at the speech-level and captures the location of the remarks, the date, the type of speech, the URL, the raw scraped text, the full cleaned text, a column that captures only the remarks of the Secretary of State, as well as a suite of additional variables.
 
