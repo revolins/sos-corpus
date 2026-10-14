@@ -48,7 +48,7 @@ jobs:
       - name: Download release CSV
         id: release
         run: |
-          # The tag arrives via env, not ${{ }} interpolation, so a crafted
+          # The tag arrives via env, not expression interpolation, so a crafted
           # input can't inject shell commands into this step.
           TAG="$INPUT_TAG"
           if [ -z "$TAG" ]; then
