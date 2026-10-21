@@ -145,7 +145,7 @@ _SKIPPED_COLUMNS = ['url', 'reason', 'stage', 'block_type', 'byline', 'title',
                     'first_400', 'labels', 'run_id']
 _SNAPSHOT_COLUMNS = ['page', 'pos', 'href', 'url_key', 'type', 'title', 'list_date',
                      'total_pages', 'items_header', 'pass']
-_PENDING_COLUMNS = ['url', 'first_seen', 'attempts', 'last_error']
+_PENDING_COLUMNS = ['url', 'first_seen', 'attempts', 'last_error', 'source']
 
 
 class DiscoveryError(RuntimeError):
@@ -521,6 +521,9 @@ class Candidate(NamedTuple):
     # archive | sitemap_page | sitemap_release | supplemental | held | pending
     source: str
     listing_date: str = ''    # ISO date the archive listing showed, if any
+    # For a re-fed pending URL: the source that first found it. Decides whether
+    # a page with no byline may be kept (see _TRUSTED_SOURCES).
+    origin: str = ''
 
 
 def _parse_lastmod(text: str) -> date | None:
@@ -1533,14 +1536,18 @@ class PageDecision(NamedTuple):
     labels: list          # distinct speaker labels in the block (for the sidecar)
 
 
-def _byline_decision(block_meta: dict, title: str, n_rubio_turns: int) -> tuple[bool, str, bool]:
+def _byline_decision(block_meta: dict, title: str, n_rubio_turns: int,
+                     trusted: bool = True) -> tuple[bool, str, bool]:
     """(keep, reason, joint) from the block byline lines (audit C-02).
 
     Keep when a byline names Rubio, when the block has Rubio speaker labels, or for
     a joint statement he co-signs. Spokesperson bylines ("Office of the
     Spokesperson" media notes, rows 17461/17463) are third-person releases about
     him. A page with no parseable byline (legacy layout, /external-content/) is
-    kept: the gate only rejects on positive evidence. The byline is the meta line,
+    kept only when `trusted` -- found by a curated source (the remarks archive,
+    the supplemental list, the held queue). A sitemap-only page with no byline
+    and no Rubio labels is a bureau notice (Foreign Military Sales, TIP
+    determinations: the 2026-10-21 dry run merged six) and is rejected. The byline is the meta line,
     never a substring search -- "Office of the Spokesperson" is in the footer of
     every page.
     """
@@ -1559,7 +1566,7 @@ def _byline_decision(block_meta: dict, title: str, n_rubio_turns: int) -> tuple[
     if joint_title:
         return True, 'joint_cosigned', True
     if not bylines:
-        return True, 'no_byline', False
+        return (True, 'no_byline', False) if trusted else (False, 'no_byline_untrusted', False)
     if any(_SPOKES_BYLINE_RE.search(b) for b in bylines):
         return False, 'spokesperson_byline', False
     return False, 'other_byline', False
@@ -1584,7 +1591,14 @@ def _modality(stype: str, block: str, n_rubio_turns: int, marker_reason: str,
     return 'written'
 
 
-def classify_rubio_page(url: str, page: dict, block_meta: dict, extracted: dict) -> PageDecision:
+# Sources whose listing already says "this is Rubio" (the curated archive, a
+# hand-checked supplemental entry, a row held from an earlier run). Sitemaps
+# list every release on state.gov, so a sitemap-only page needs positive evidence.
+_TRUSTED_SOURCES = frozenset({'archive', 'supplemental', 'held'})
+
+
+def classify_rubio_page(url: str, page: dict, block_meta: dict, extracted: dict,
+                        trusted: bool = True) -> PageDecision:
     """Post-fetch decision: is this page Rubio speaking or writing in his own voice?
 
     Runs the third-person gate (with transcript markers), then the byline gate,
@@ -1602,7 +1616,8 @@ def classify_rubio_page(url: str, page: dict, block_meta: dict, extracted: dict)
                                                    block, n_turns)
     if not keep:
         return PageDecision(False, reason, '', '', labels)
-    by_keep, by_reason, joint = _byline_decision(block_meta, page.get('title', ''), n_turns)
+    by_keep, by_reason, joint = _byline_decision(block_meta, page.get('title', ''), n_turns,
+                                                 trusted)
     # A transcript marker under a third-person intro is evidence on its own (a
     # Spokesperson-bylined video message would still be his words).
     if not by_keep and 'marker' not in reason:
@@ -1643,9 +1658,22 @@ def _rubio_content_block(page: dict) -> tuple[str, str]:
     """
     raw_block = _extract_modern_state_content(page.get('raw_text', '') or '')
     ct = page.get('content_text') or ''
+    # Back-link footnotes (bare-number <sup> marker, definition + "↩︎") are
+    # parsed in raw_text's line layout. The per-block text glues the marker onto
+    # its word ("simply starting1 a war", footnote "ending"), so the correction is
+    # never applied and the footnote body trails the last turn (2025-12-04
+    # Institute of Peace remarks, held by Check AD in the 2026-10-21 dry run).
+    # Bracketed "[k]" footnotes survive per-block text and still use it.
+    if _has_backlink_footnotes(raw_block):
+        return raw_block, 'raw'
     if ct and raw_block and _alnum(ct) == _alnum(raw_block):
         return ct, 'per_block'
     return raw_block, 'raw'
+
+
+def _has_backlink_footnotes(block: str) -> bool:
+    """True when the block has a back-link footnote list (an own-line arrow)."""
+    return any(ln.strip() in _FN_BACKLINK for ln in block.split('\n'))
 
 
 # "[1]" / "[ii]" footnote markers (lowercase roman only, so "[I]t's" is not one).
@@ -1784,6 +1812,13 @@ def _apply_footnote_errata(block: str) -> tuple[str, int]:
                     lines[i] = f'[{key}]'
             else:
                 drop.add(bl)                       # stray back-link arrow
+                # An orphan definition (nothing in the text references it) sitting
+                # just under the "____" separator is part of the footnote list, not
+                # speech: drop it with its arrow rather than leave it trailing the
+                # last turn.
+                if (bl >= 1 and (bl - 1) not in drop and any(
+                        _FN_SEPARATOR_RE.match(lines[k]) for k in range(max(0, bl - 4), bl - 1))):
+                    drop.add(bl - 1)
 
     has_orphan = any((m := _FN_OWNLINE_RE.match(ln)) and not m.group(2) for ln in lines)
     if not defs and not drop and not has_orphan:
@@ -2047,12 +2082,14 @@ def read_pending(path: Path | None) -> dict[str, dict]:
             except ValueError:
                 attempts = 0
             out[_live_key(url)] = {'url': url, 'first_seen': r.get('first_seen') or '',
-                                   'attempts': attempts, 'last_error': r.get('last_error') or ''}
+                                   'attempts': attempts, 'last_error': r.get('last_error') or '',
+                                   'source': r.get('source') or ''}
     return out
 
 
 def update_pending(previous: dict[str, dict], *, fetched_ok: set, resolved: set,
-                   failures: dict[str, tuple[str, str]], today: str) -> dict[str, dict]:
+                   failures: dict[str, tuple[str, str]], today: str,
+                   sources: dict[str, str] | None = None) -> dict[str, dict]:
     """Carry the pending queue forward one run.
 
     fetched_ok -- keys fetched successfully this run (removed, whatever the
@@ -2073,7 +2110,8 @@ def update_pending(previous: dict[str, dict], *, fetched_ok: set, resolved: set,
         out[key] = row
     for key, (url, err) in failures.items():
         if key not in out:
-            out[key] = {'url': url, 'first_seen': today, 'attempts': 1, 'last_error': err[:300]}
+            out[key] = {'url': url, 'first_seen': today, 'attempts': 1, 'last_error': err[:300],
+                        'source': (sources or {}).get(key, '')}
     return out
 
 
@@ -2256,7 +2294,8 @@ def run(args: argparse.Namespace) -> None:
         print(f'[rubio_backfill] {len(got)} supplemental URL(s) from {p.name}')
     # Pending URLs are re-fed EVERY run, whatever --since says: a page that
     # timed out must not age out of the window before it is ever read (F-01).
-    extra += [Candidate(r['url'], 'pending') for r in pending.values()]
+    extra += [Candidate(r['url'], 'pending', origin=r.get('source') or '')
+              for r in pending.values()]
     try:
         if supplemental_only:
             all_candidates = _dedup_candidates(extra)
@@ -2364,6 +2403,7 @@ def run(args: argparse.Namespace) -> None:
     failed = 0
     fetched_ok: set[str] = set()
     failures: dict[str, tuple[str, str]] = {}
+    failure_sources: dict[str, str] = {}   # key -> first-finding source, for pending
     next_row_id = max_row_id + 1
 
     def skip(c: Candidate, reason: str, stage: str, *, block_meta: dict | None = None,
@@ -2385,6 +2425,7 @@ def run(args: argparse.Namespace) -> None:
             page = fetch_rubio_page(url, session, raise_errors=True)
         except FetchFailure as f:
             failed += 1
+            failure_sources[_live_key(url)] = c.origin or c.source
             failures[_live_key(url)] = (url, f'{f.kind}: {f.detail}'
                                         + (f' (final {f.final_url})' if f.final_url else ''))
             skiplog.add(url, f.kind, 'fetch',
@@ -2427,18 +2468,21 @@ def run(args: argparse.Namespace) -> None:
 
         # Classification (plan step P2): active-speaker gate with transcript
         # markers, then the byline gate.
-        decision = classify_rubio_page(normalize_url(url), page, block_meta, extracted)
+        origin = c.origin if c.source == 'pending' else c.source
+        decision = classify_rubio_page(normalize_url(url), page, block_meta, extracted,
+                                       trusted=(origin in _TRUSTED_SOURCES
+                                                or (c.source == 'pending' and not origin)))
         if not decision.keep:
             skip(c, decision.reason, 'classify', block_meta=block_meta, page=page,
                  text=extracted.get('speaker_text') or extracted['speech_text'],
                  labels=' | '.join(decision.labels))
             continue
 
-        # Written statements issued by the Department carry no dateline; the
-        # corpus convention (565 of 566 Rubio Press Statements in v2026.10.19)
-        # is the Washington newsroom. Spoken items with no dateline get no
+        # Written statements and recorded video messages issued by the
+        # Department carry no dateline; the corpus convention (565 of 566 Rubio
+        # Press Statements in v2026.10.19) is the Washington newsroom. Spoken items with no dateline get no
         # default and fall through to corpus_rubio_update's provisional_location.
-        if not location and decision.modality in ('written', 'joint'):
+        if not location and decision.modality in ('written', 'joint', 'video'):
             location = 'Washington, D.C.'
 
         # Post-fetch dedup: now that the real speech date is known, apply the
@@ -2494,7 +2538,7 @@ def run(args: argparse.Namespace) -> None:
 
     # Run-to-run state.
     new_pending = update_pending(pending, fetched_ok=fetched_ok, resolved=resolved,
-                                 failures=failures, today=today)
+                                 failures=failures, today=today, sources=failure_sources)
     write_pending(side['pending'], new_pending)
     stuck = stuck_entries(new_pending)
     if stuck:

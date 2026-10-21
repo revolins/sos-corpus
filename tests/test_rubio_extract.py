@@ -234,6 +234,32 @@ def test_content_block_prefers_per_block_only_when_same_characters():
     assert ex['extraction_mode'].endswith('+per_block+footnote_errata')
 
 
+def test_backlink_footnote_uses_raw_layout():
+    # 2025-12-04 Institute of Peace remarks: a bare-number <sup> marker with a
+    # back-link footnote. Per-block text glues it ("starting1"); raw_text keeps it
+    # on its own line, where the erratum ("starting" -> "ending") is applied.
+    html = ('<html><head><title>T</title></head><body>'
+            '<div><button>Share</button><span>hide</span></div>'
+            '<h1>Remarks to Press</h1><p>Remarks</p><p>December 4, 2025</p>'
+            '<div class="entry-content">'
+            '<p><strong>SECRETARY RUBIO</strong>: We want a peace that extends beyond simply '
+            'starting<sup><a href="#fn1">1</a></sup> a war in the Congo.</p>'
+            '<p><strong>QUESTION</strong>: Thank you.</p>'
+            '<p><strong>SECRETARY RUBIO</strong>: Thank you.</p>'
+            '<p>________________</p><p>ending<a href="#r1">\u21a9\ufe0e</a></p>'
+            '</div><p>Tags</p><p>Congo</p><footer><p>Contact Us</p></footer></body></html>')
+    soup = rb._make_soup(html)
+    raw = soup.get_text('\n', strip=True)
+    ct = rb._extract_modern_state_content(rb._block_text(soup))
+    assert 'starting1' in ct
+    block, src = rb._rubio_content_block({'raw_text': raw, 'content_text': ct})
+    assert src == 'raw'
+    ex = rb.extract_row('u', {'raw_text': raw, 'content_text': ct})
+    assert 'simply ending a war' in ex['speech_text']
+    assert 'starting' not in ex['speech_text'] and '\u21a9' not in ex['speech_text']
+    assert ex['speech_text'].rstrip().endswith('Thank you.')
+
+
 def test_stage_direction_via_translation_rubio_only():
     s = '(Via translation) We are concerned about political violence in any country.'
     assert strip_stage_directions(s) == s                              # default unchanged
@@ -265,6 +291,11 @@ def test_footnote_errata_layouts():
                                           'Greenland that allows us')
     # no footnotes: untouched
     assert rb._apply_footnote_errata('Plain text [1] here.') == ('Plain text [1] here.', 0)
+    # orphan definition under the separator that nothing references: part of the
+    # footnote list, dropped with the separator
+    out, _ = rb._apply_footnote_errata('every step of the way.\nSECRETARY RUBIO:\nThank you.\n'
+                                       '________________\nending\n\u21a9\ufe0e')
+    assert out == 'every step of the way.\nSECRETARY RUBIO:\nThank you.'
 
 
 def test_footnote_fixture_rows():
