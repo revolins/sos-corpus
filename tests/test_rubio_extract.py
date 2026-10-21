@@ -265,6 +265,11 @@ def test_footnote_errata_layouts():
                                           'Greenland that allows us')
     # no footnotes: untouched
     assert rb._apply_footnote_errata('Plain text [1] here.') == ('Plain text [1] here.', 0)
+    # orphan definition under the separator, nothing references it (2025-12-04
+    # Institute of Peace remarks): editorial residue, dropped with the separator
+    out, _ = rb._apply_footnote_errata('every step of the way.\nSECRETARY RUBIO:\nThank you.\n'
+                                       '________________\nending\n\u21a9\ufe0e')
+    assert out == 'every step of the way.\nSECRETARY RUBIO:\nThank you.'
 
 
 def test_footnote_fixture_rows():

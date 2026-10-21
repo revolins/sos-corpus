@@ -17,13 +17,9 @@ https://www.state.gov/releases/office-of-the-spokesman/2025/12/secretary-of-stat
 https://www.state.gov/releases/office-of-the-spokesperson/2025/12/secretary-of-state-marco-rubio-remarks-to-press-at-donald-j-trump-institute-of-peace/
 
 # D-01: 2026-05-21 remarks to press at the Miami/Homestead airport. The URL has no
-# /YYYY/MM/, so the Date comes from JSON-LD. The releases/office-of-the-spokesperson/
-# form is the one the audit documents (D-01, §6 step 4), so it comes first. The
-# flat-slug form is unevidenced (state.gov's usual spelling for undated pages) and
-# is kept as a fallback: if both resolve, the second copy is dropped after the
-# fetch by slug + Date (corpus_rubio_update's within-backfill dedup).
+# /YYYY/MM/, so the Date comes from JSON-LD. Confirmed by the 2026-10-21 ground-truth
+# crawl and dry run (the flat-slug variant once listed here returned 404).
 https://www.state.gov/releases/office-of-the-spokesperson/secretary-of-state-marco-rubio-remarks-to-press-at-the-miami-homestead-airport/
-https://www.state.gov/secretary-of-state-marco-rubio-remarks-to-press-at-the-miami-homestead-airport/
 
 # C-01: 2026-05-20 Cuban Independence Day video message (translated transcript).
 # The third-person gate dropped it in 12 archive runs, and it now sits below the

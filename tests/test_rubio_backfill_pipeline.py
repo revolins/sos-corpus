@@ -352,10 +352,10 @@ def test_fetch_failure_kinds():
 def test_pending_lifecycle(tmp_path):
     k = rb._live_key
     prev = {
-        k('https://www.state.gov/a/'): {'url': 'https://www.state.gov/a/', 'first_seen': '2026-10-01', 'attempts': 2, 'last_error': 'x'},
-        k('https://www.state.gov/b/'): {'url': 'https://www.state.gov/b/', 'first_seen': '2026-10-01', 'attempts': 1, 'last_error': 'x'},
-        k('https://www.state.gov/c/'): {'url': 'https://www.state.gov/c/', 'first_seen': '2026-10-01', 'attempts': 5, 'last_error': 'x'},
-        k('https://www.state.gov/d/'): {'url': 'https://www.state.gov/d/', 'first_seen': '2026-10-08', 'attempts': 1, 'last_error': 'x'},
+        k('https://www.state.gov/a/'): {'url': 'https://www.state.gov/a/', 'first_seen': '2026-10-01', 'attempts': 2, 'last_error': 'x', 'source': ''},
+        k('https://www.state.gov/b/'): {'url': 'https://www.state.gov/b/', 'first_seen': '2026-10-01', 'attempts': 1, 'last_error': 'x', 'source': ''},
+        k('https://www.state.gov/c/'): {'url': 'https://www.state.gov/c/', 'first_seen': '2026-10-01', 'attempts': 5, 'last_error': 'x', 'source': ''},
+        k('https://www.state.gov/d/'): {'url': 'https://www.state.gov/d/', 'first_seen': '2026-10-08', 'attempts': 1, 'last_error': 'x', 'source': ''},
     }
     new = rb.update_pending(
         prev, fetched_ok={k('https://www.state.gov/b/')}, resolved={k('https://www.state.gov/c/')},
@@ -368,7 +368,7 @@ def test_pending_lifecycle(tmp_path):
     assert by['a']['last_error'] == 'fetch_error: 504'
     assert by['d']['attempts'] == 1                        # not attempted: unchanged
     assert by['e'] == {'url': 'https://www.state.gov/e/', 'first_seen': '2026-10-21',
-                       'attempts': 1, 'last_error': 'external_redirect: 403'}
+                       'attempts': 1, 'last_error': 'external_redirect: 403', 'source': ''}
     assert [r['url'] for r in rb.stuck_entries(new)] == ['https://www.state.gov/a/']
     p = tmp_path / 'pending.csv'
     rb.write_pending(p, new)
@@ -453,8 +453,35 @@ def test_byline_gate_and_modality():
     d, bm, ex = _classify(u, raw)
     assert d.keep and d.modality == 'spoken' and 'rubio_turns' in ex['extraction_mode']
     assert bm['block_location'] == 'Washington, D.C.'
-    # No byline at all (legacy / external layout): kept, the gate needs positive evidence
+    # No byline at all (legacy / external layout): kept only from a curated source
     assert rb._byline_decision({}, 'x', 0) == (True, 'no_byline', False)
+    assert rb._byline_decision({}, 'x', 0, trusted=False) == (False, 'no_byline_untrusted', False)
+    # ...but Rubio labels are positive evidence whatever the source
+    assert rb._byline_decision({}, 'x', 1, trusted=False)[:2] == (True, 'rubio_labels')
+
+
+def test_bureau_notice_from_sitemap_is_rejected():
+    # 2026-10-21 dry run: a Bureau of Political-Military Affairs FMS notice (no
+    # byline, no labels) found by the release sitemap was merged as a Rubio row.
+    u = f'{WWW}/releases/bureau-of-political-military-affairs/2026/10/egypt-javelin-missiles/'
+    raw = _raw(page_html('Egypt – Javelin Missiles', 'Foreign Military Sales: Congressional Notification',
+                         [], ['Bureau of Political-Military Affairs'], 'October 2, 2026',
+                         ['The U.S. Department of State has made a determination approving a possible '
+                          'Foreign Military Sale to the Government of Egypt.'] * 3))
+    page = {'raw_text': raw, 'title': 'x'}
+    bm = rb._parse_block_metadata(raw)
+    with redirect_stderr(io.StringIO()):
+        ex = rb.extract_row(u, page)
+    d = rb.classify_rubio_page(u, page, bm, ex, trusted=False)
+    assert not d.keep and d.reason == 'no_byline_untrusted'
+    assert rb.classify_rubio_page(u, page, bm, ex, trusted=True).keep   # archive-listed: kept
+
+
+def test_pending_records_first_source():
+    new = rb.update_pending({}, fetched_ok=set(), resolved=set(),
+                            failures={'k': ('https://www.state.gov/k/', 'fetch_error: 504')},
+                            today='2026-10-21', sources={'k': 'sitemap_release'})
+    assert new['k']['source'] == 'sitemap_release'
 
 
 def test_third_person_and_pattern_needs_a_readout_verb():
@@ -488,19 +515,17 @@ def test_exclusions_match_both_path_spellings(tmp_path):
 def test_seed_files_parse():
     repo = _HERE.parent / 'data'
     urls = rb.read_url_list(repo / 'rubio_supplemental_urls.txt')
-    assert len(urls) == 8 and all(u.startswith('https://www.state.gov/') for u in urls)
+    assert len(urls) == 7 and all(u.startswith('https://www.state.gov/') for u in urls)
     assert any('cuban-people-on-their-independence-day' in u for u in urls)
     # The audit-documented Homestead URL (D-01) is seeded, not commented out.
     assert any('/releases/office-of-the-spokesperson/secretary-of-state-marco-rubio-remarks-to-press-'
                'at-the-miami-homestead-airport/' in u for u in urls)
-    # the two IOP and the two Cuban spellings each collapse to one fetch; the two
-    # Homestead spellings are both fetched (folded after the fetch by slug + Date)
-    assert len(rb._dedup_candidates([rb.Candidate(u, 'supplemental') for u in urls])) == 6
-    from corpus_keys import slug_date_key
-    hs = [u for u in urls if 'miami-homestead' in u]
-    assert len(hs) == 2 and slug_date_key(hs[0], '2026-05-21') == slug_date_key(hs[1], '2026-05-21')
+    # the two IOP and the two Cuban spellings each collapse to one fetch; the
+    # 404ing flat-slug Homestead variant was removed after the 2026-10-21 dry run
+    assert len(rb._dedup_candidates([rb.Candidate(u, 'supplemental') for u in urls])) == 5
+    assert len([u for u in urls if 'miami-homestead' in u]) == 1
     ex = rb.load_exclusions(repo / 'rubio_coverage_exclusions.csv')
-    assert len(ex.url_keys) == 6 and len(ex.slug_dates) == 2
+    assert len(ex.url_keys) == 8 and len(ex.slug_dates) == 2
     assert rb._live_key(f'{WWW}/remarks-secretary-rubio/') in ex.url_keys
 
 
