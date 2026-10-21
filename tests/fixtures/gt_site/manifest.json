@@ -1,0 +1,98 @@
+{
+ "https://www.state.gov/briefings/department-press-briefing-may-19-2026/": {
+  "file": "briefing_other.html",
+  "status": 200
+ },
+ "https://www.state.gov/external-content/statement-from-the-white-house-example/": {
+  "file": "whitehouse.html",
+  "final_url": "https://www.whitehouse.gov/briefings-statements/2026/02/statement-example/",
+  "status": 200
+ },
+ "https://www.state.gov/page-sitemap.xml": {
+  "file": "page-sitemap.xml",
+  "status": 200
+ },
+ "https://www.state.gov/post_tag-sitemap.xml": {
+  "file": "post_tag-sitemap.xml",
+  "status": 200
+ },
+ "https://www.state.gov/releases/office-of-the-spokesman/": {
+  "file": "spokesman_p1.html",
+  "status": 200
+ },
+ "https://www.state.gov/releases/office-of-the-spokesman/2025/12/secretary-of-state-marco-rubio-remarks-to-press-at-donald-j-trump-institute-of-peace/": {
+  "file": "iop_spoken.html",
+  "status": 200
+ },
+ "https://www.state.gov/releases/office-of-the-spokesman/2026/01/joint-statement-on-termination-of-who-membership/": {
+  "file": "joint_statement.html",
+  "status": 200
+ },
+ "https://www.state.gov/releases/office-of-the-spokesman/2026/05/a-page-that-503s/": {
+  "headers": {
+   "Retry-After": "1"
+  },
+  "status": 503
+ },
+ "https://www.state.gov/releases/office-of-the-spokesman/2026/05/independence-day-of-example/": {
+  "file": "written_byline.html",
+  "status": 200
+ },
+ "https://www.state.gov/releases/office-of-the-spokesman/2026/05/secretary-rubios-call-with-foreign-minister-example/": {
+  "file": "readout.html",
+  "status": 200
+ },
+ "https://www.state.gov/releases/office-of-the-spokesman/2026/05/secretary-rubios-message-to-the-cuban-people-on-their-independence-day/": {
+  "file": "cuba_video.html",
+  "status": 200
+ },
+ "https://www.state.gov/releases/office-of-the-spokesman/2026/05/visa-restrictions-on-example-officials/": {
+  "file": "visa_spokesperson.html",
+  "status": 200
+ },
+ "https://www.state.gov/releases/office-of-the-spokesman/page/2/": {
+  "file": "spokesman_p2.html",
+  "status": 200
+ },
+ "https://www.state.gov/releases/office-of-the-spokesman/page/3/": {
+  "file": "spokesman_p3.html",
+  "status": 200
+ },
+ "https://www.state.gov/releases/secretary-of-state/": {
+  "file": "secretary_unknown_markup.html",
+  "status": 200
+ },
+ "https://www.state.gov/remarks-secretary-rubio/": {
+  "file": "remarks_p1.html",
+  "headers": {
+   "age": "5400",
+   "date": "Sun, 25 Oct 2026 07:00:00 GMT",
+   "x-cache": "Hit from cloudfront"
+  },
+  "status": 200
+ },
+ "https://www.state.gov/remarks-secretary-rubio/page/2/": {
+  "file": "remarks_p2.html",
+  "headers": {
+   "age": "0",
+   "x-cache": "Miss from cloudfront"
+  },
+  "status": 200
+ },
+ "https://www.state.gov/secretary-of-state-marco-rubio-remarks-to-press-at-the-miami-homestead-airport/": {
+  "file": "homestead_spoken.html",
+  "status": 200
+ },
+ "https://www.state.gov/sitemap_index.xml": {
+  "file": "sitemap_index.xml",
+  "status": 200
+ },
+ "https://www.state.gov/state_briefing-sitemap.xml": {
+  "file": "state_briefing-sitemap.xml",
+  "status": 200
+ },
+ "https://www.state.gov/state_press_release-sitemap1.xml": {
+  "file": "state_press_release-sitemap1.xml",
+  "status": 200
+ }
+}

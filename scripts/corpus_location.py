@@ -41,6 +41,18 @@ page that explicitly states a newsroom origin ("Office of the Spokesperson",
 the 724 existing Rubio rows got their value. The distinction to hold onto:
 the page said something that means Washington -> default; the page said
 nothing -> quarantine.
+
+── Provisional, never dropped (2026-10, rubio coverage audit M-01/M-02) ─────
+Quarantine turned out to be a silent permanent loss: the discovery floor
+moves past a quarantined row within two weeks and it is never fetched again.
+A replay over the 814 Rubio rows found 8 that would be dropped today
+('Prime Minister’s Office, Jerusalem', 'Ben Gurion International Airport',
+'Basseterre, St. Kitts and Nevis', ...). normalize_location keeps its
+contract -- ('', reason) still means "not confidently resolved" -- but the
+caller now merges the row with provisional_location()'s value and marks it
+Location Provisional = 1, instead of dropping the speech. The provisional
+value still never fabricates Washington: it uses 'Unknown' for whatever part
+of 'City, Region' the page did not state.
 """
 
 from __future__ import annotations
@@ -50,9 +62,15 @@ import unicodedata
 from collections import Counter, defaultdict
 from typing import Iterable, NamedTuple
 
-__all__ = ['Gazetteer', 'build_gazetteer', 'normalize_location', 'fold_city']
+__all__ = ['Gazetteer', 'build_gazetteer', 'normalize_location',
+           'provisional_location', 'fold_city', 'UNKNOWN']
 
 CAPITAL = 'Washington, D.C.'
+
+# Placeholder for the half of 'City, Region' a page did not state. Only ever
+# produced by provisional_location(), and kept out of build_gazetteer() so a
+# provisional row can never teach the gazetteer a fake city or region.
+UNKNOWN = 'Unknown'
 
 
 class Gazetteer(NamedTuple):
@@ -96,6 +114,53 @@ _TITLE_CUE_RE = re.compile(
 )
 # "Robert F. Kennedy" -- Firstname MiddleInitial. Lastname
 _PERSON_NAME_RE = re.compile(r'\b[A-Z][a-z]+\s+[A-Z]\.\s+[A-Z][a-z]+\b')
+
+# Rule 4 exemptions -- a title or a name that is part of a PLACE name.
+# "Prime Minister’s Office" / "Ambassador's Residence": the possessive (and
+# up to three words before it) names whose building it is. "Harry S. Truman
+# Building": an initialled name followed by a building noun.
+_POSSESSIVE_RE = re.compile(r"(?:\b[\w.]+\s+){0,3}[\w.]+[’']s\b")
+_INITIALLED_VENUE_RE = re.compile(
+    r'\b[A-Z][a-z]+\s+[A-Z]\.\s+[A-Z][a-z]+\s+(?:Building|Center|Centre|'
+    r'Hall|Library|Airport|Auditorium|Room|Memorial|Museum|Institute|School|'
+    r'University|College|Bridge|Station|Plaza|Square|Park|Theater|Theatre|'
+    r'Conference\s+Center|Federal\s+Building)\b'
+)
+
+# ── Venue aliases -- named venues whose city the page leaves implicit ───────
+# Folded key (see fold_city) -> canonical corpus value. Checked against the
+# whole value and against each comma part, so 'Oval Office, The White House'
+# and 'The White House' both land on the capital. The targets are existing
+# corpus spellings (Tel Aviv, Israel: 47 rows; Manama, Bahrain: 22), and Ben
+# Gurion follows the corpus's own precedent (row 17238 is 'Tel Aviv, Israel').
+_VENUE_ALIASES = {
+    'ben gurion airport': 'Tel Aviv, Israel',
+    'ben gurion international airport': 'Tel Aviv, Israel',
+    'ritz carlton bahrain': 'Manama, Bahrain',
+    'the ritz carlton bahrain': 'Manama, Bahrain',
+    'the white house': CAPITAL,
+    'white house': CAPITAL,
+    'oval office': CAPITAL,
+    'the oval office': CAPITAL,
+    'u s capitol': CAPITAL,
+    'us capitol': CAPITAL,
+    'the u s capitol': CAPITAL,
+    'united states capitol': CAPITAL,
+    'the united states capitol': CAPITAL,
+    'harry s truman building': CAPITAL,
+    'the harry s truman building': CAPITAL,
+    'truman building': CAPITAL,
+}
+
+# "St. Kitts and Nevis" vs pycountry's "Saint Kitts and Nevis": a region that
+# misses the vocabulary only on this spelling is the same region.
+_ST_RE = re.compile(r'^(?:St\.?|Saint)\s+', re.IGNORECASE)
+
+# Rule 4 when nothing else said Washington -- an explicit dateline only.
+_DC_DATELINE_RE = re.compile(
+    r'\bwashington\s*,?\s*(?:d\.?\s*c\b\.?|district\s+of\s+columbia\b)',
+    re.IGNORECASE,
+)
 
 _USPS = {
     'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas',
@@ -185,6 +250,8 @@ def build_gazetteer(rows: Iterable[dict]) -> Gazetteer:
         city, rhs = city.strip(), rhs.strip()
         if not city or not rhs:
             continue
+        if city == UNKNOWN or rhs == UNKNOWN:
+            continue  # a provisional placeholder, not curated vocabulary
         if _TITLE_CUE_RE.search(rhs) or _PERSON_NAME_RE.search(loc):
             continue
         rhs_counts[rhs] += 1
@@ -216,6 +283,43 @@ def _expand_region(rhs: str) -> str:
     return _USPS.get(key, rhs.strip())
 
 
+def _saint_variant(rhs: str, vocab: frozenset) -> str:
+    """'St. Kitts and Nevis' -> 'Saint Kitts and Nevis' (or the reverse) when
+    only the other spelling is in the vocabulary; '' otherwise."""
+    m = _ST_RE.match(rhs)
+    if not m:
+        return ''
+    rest = rhs[m.end():]
+    for prefix in ('Saint ', 'St. '):
+        cand = prefix + rest
+        if cand != rhs and cand in vocab:
+            return cand
+    return ''
+
+
+def _is_person_part(part: str) -> bool:
+    """Rule 4 for one comma part: does it name a person or office holder?
+
+    Possessives ("Prime Minister’s Office") and initialled building names
+    ("Harry S. Truman Building") are places, so they are blanked out before
+    the cue regexes run.
+    """
+    probe = _INITIALLED_VENUE_RE.sub(' ', _POSSESSIVE_RE.sub(' ', part))
+    return bool(_TITLE_CUE_RE.search(probe) or _PERSON_NAME_RE.search(probe))
+
+
+def _venue_alias(value: str) -> str:
+    """Alias hit on the whole value or on any single comma part; '' if none."""
+    hit = _VENUE_ALIASES.get(fold_city(value))
+    if hit:
+        return hit
+    for part in value.split(','):
+        hit = _VENUE_ALIASES.get(fold_city(part))
+        if hit:
+            return hit
+    return ''
+
+
 def normalize_location(raw: str, gaz: Gazetteer) -> tuple[str, str]:
     """Return (canonical 'City, Region', method) or ('', reason).
 
@@ -240,9 +344,23 @@ def normalize_location(raw: str, gaz: Gazetteer) -> tuple[str, str]:
         if not value:
             return '', 'en_route_bare'
 
-    # Rule 4 -- a person or office holder, not a place.
-    if _TITLE_CUE_RE.search(value) or _PERSON_NAME_RE.search(value):
-        return '', 'person_rejected'
+    # Venue alias -- a named venue whose city the page left implicit.
+    hit = _venue_alias(value)
+    if hit:
+        return hit, method_prefix + 'venue_alias'
+
+    # Rule 4 -- a person or office holder, not a place. Applied PER COMMA
+    # PART: 'Prime Minister’s Office, Jerusalem' used to be rejected whole
+    # because one part carried a title cue. Person parts are dropped and the
+    # rest resolved; the value is rejected only when no part is left.
+    parts = [p.strip() for p in value.split(',') if p.strip()]
+    person = [_is_person_part(p) for p in parts]
+    if any(person):
+        kept = [p for p, bad in zip(parts, person) if not bad]
+        if not kept:
+            return '', 'person_rejected'
+        value = ', '.join(kept)
+        method_prefix += 'person_stripped+'
 
     # Rule 5 -- the whole string is a known city or named venue. Only when
     # there is no comma: a value that already names its region must go
@@ -261,6 +379,8 @@ def normalize_location(raw: str, gaz: Gazetteer) -> tuple[str, str]:
             # corpus_finalize_v4_30.py applied by hand to 15 historical rows.
             # For a two-part value parts[-2] IS parts[0], so this is uniform.
             lhs, rhs = parts[-2], _expand_region(parts[-1])
+            if rhs not in gaz.rhs_vocab:
+                rhs = _saint_variant(rhs, gaz.rhs_vocab) or rhs
 
             # Known region: prefer the corpus's canonical spelling for this
             # city when we have one (this is what collapses 'Antalya, Türkiye'
@@ -295,9 +415,60 @@ def normalize_location(raw: str, gaz: Gazetteer) -> tuple[str, str]:
             if hit:
                 return hit, method_prefix + 'gazetteer_venue'
 
-        return '', 'unresolved_region'
+        return '', method_prefix + 'unresolved_region'
 
-    return '', 'unresolved'
+    return '', method_prefix + 'unresolved'
+
+
+def provisional_location(raw: str, gaz: Gazetteer) -> tuple[str, str]:
+    """Never-empty, schema-safe Location for a row normalize_location could
+    not resolve. The caller must mark the row Location Provisional = 1.
+
+    Cascade, most to least informative:
+      1. dateline       -- 'Washington, D.C.' ONLY if the value says so
+      2. country level  -- a part that is (or ends in) a known region:
+                           'Civil-Military Coordination Center, Southern
+                           Israel' -> 'Southern Israel, Israel';
+                           'Ambassador Smith, France' -> 'Unknown, France'
+      3. best form      -- what the page said, padded with 'Unknown':
+                           'Foo, Bar' as is; 'Some Venue' -> 'Some Venue, Unknown'
+      4. nothing usable -- 'Unknown, Unknown' (a person/byline, or empty)
+    """
+    value = _tidy(_EN_ROUTE_RE.sub('', _tidy(raw)))
+    parts = [p.strip() for p in value.split(',') if p.strip()]
+    parts = [p for p in parts if not _is_person_part(p) and p != UNKNOWN]
+
+    # 1. An explicit Washington dateline somewhere in the value. Checked
+    # first so 'D.C.' is never taken for a country-level region.
+    if _DC_DATELINE_RE.search(value):
+        return CAPITAL, 'provisional_dateline_dc'
+
+    # 2. Country level. Right to left: the region is conventionally last.
+    vocab = {fold_city(v): v for v in gaz.rhs_vocab}
+    for part in reversed(parts):
+        words = part.split()
+        for start in range(len(words)):
+            tail = ' '.join(words[start:])
+            region = vocab.get(fold_city(tail)) or _saint_variant(tail, gaz.rhs_vocab)
+            if region:
+                lhs = UNKNOWN if start == 0 else part
+                cand = f'{lhs}, {region}'
+                if assert_schema_safe(cand):
+                    return cand, 'provisional_country'
+                break
+
+    # 3. Best schema-safe form of what the page actually said.
+    if len(parts) >= 2:
+        cand, method = f'{parts[-2]}, {parts[-1]}', 'provisional_passthrough'
+    elif parts:
+        cand, method = f'{parts[0]}, {UNKNOWN}', 'provisional_venue_only'
+    else:
+        cand, method = '', ''
+    if cand and assert_schema_safe(cand):
+        return cand, method
+
+    # 4. Nothing place-like at all.
+    return f'{UNKNOWN}, {UNKNOWN}', 'provisional_unknown'
 
 
 def assert_schema_safe(value: str) -> bool:

@@ -1,0 +1,226 @@
+name: Rubio Ground-Truth Crawl
+
+# READ-ONLY inventory of state.gov (plan step 7, docs/rubio_coverage_audit.md §3).
+# It never commits, never cuts a corpus release and never publishes to Hugging
+# Face. Outputs go to a workflow artifact (90 days) and, only when asked and
+# only for a complete crawl, to a gt-YYYY.MM.DD PRERELEASE that is never marked
+# latest -- so `gh release download` in rubio-update.yml (which takes the latest
+# release) keeps getting the corpus.
+#
+# state.gov 403s non-CI clients, which is why this runs here and not locally.
+# A full inventory is larger than one night's request cap: run it again with
+# resume_artifact_run_id set to the previous run's id and it picks up from that
+# run's gt_state.json.
+
+on:
+  workflow_dispatch:
+    inputs:
+      stages:
+        description: 'Comma list of stages: E1 sitemap index, E2 release sitemaps, E3 remarks walk x2, E4 release listings, E6 content probe'
+        type: string
+        default: 'E1,E2,E3,E4,E6'
+      max_requests:
+        description: 'Hard cap on HTTP requests to state.gov this run (retries count)'
+        type: number
+        default: 1500
+      resume_artifact_run_id:
+        description: 'Optional: run id of an earlier ground-truth run whose gt_state.json to resume from'
+        type: string
+        default: ''
+      publish_prerelease:
+        description: 'Attach the outputs to a gt-YYYY.MM.DD prerelease (only if the crawl completed)'
+        type: boolean
+        default: false
+
+# Shared with any other job that crawls state.gov, so two crawls never hit the
+# site at once. cancel-in-progress: false never cancels the RUNNING crawl, but
+# GitHub keeps only ONE pending run per group: a newer queued run replaces
+# (cancels) an older pending one, so dispatch resume runs one at a time.
+concurrency:
+  group: state-gov-crawl
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    # 1500 requests at ~2.5 s each is ~65 min plus backoff. The script stops
+    # itself at --max-minutes so the state file is always saved and uploaded
+    # before this limit kills the job.
+    timeout-minutes: 240
+    permissions:
+      contents: read        # checkout + gh release download
+      actions: read         # download-artifact from an earlier run (resume)
+    outputs:
+      complete: ${{ steps.meta.outputs.complete }}
+      artifact: ${{ steps.dirs.outputs.artifact }}
+      date: ${{ steps.dirs.outputs.date }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.11-v1-${{ hashFiles('scripts/requirements.txt') }}
+
+      # Same minimal file as the weekly job -- nothing extra (2026-10-12 lesson).
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Download latest corpus release
+        run: |
+          mkdir -p data
+          # No tag => the release marked latest, i.e. the corpus, never a gt-* prerelease.
+          gh release download \
+            --pattern "corpus_v*.csv" \
+            --dir data/ \
+            --clobber
+          mv data/corpus_v*.csv data/corpus.csv
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Output paths
+        id: dirs
+        run: |
+          D=$(date -u +%Y-%m-%d)
+          echo "date=$D" >> "$GITHUB_OUTPUT"
+          echo "out=rubio_gt_$D" >> "$GITHUB_OUTPUT"
+          echo "artifact=rubio-gt-$D-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate resume run id
+        if: inputs.resume_artifact_run_id != ''
+        env:
+          RESUME_ID: ${{ inputs.resume_artifact_run_id }}
+        run: |
+          if ! [[ "$RESUME_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::resume_artifact_run_id must be a numeric run id, got '$RESUME_ID'"
+            exit 1
+          fi
+
+      - name: Download state from earlier run
+        if: inputs.resume_artifact_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          pattern: rubio-gt-*
+          path: resume/
+          merge-multiple: true
+          run-id: ${{ inputs.resume_artifact_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run ground-truth crawl
+        env:
+          STAGES: ${{ inputs.stages }}
+          MAX_REQUESTS: ${{ inputs.max_requests }}
+          OUT: ${{ steps.dirs.outputs.out }}
+        run: |
+          ARGS=(--stages "$STAGES"
+                --max-requests "$MAX_REQUESTS"
+                --max-minutes 200
+                --corpus data/corpus.csv
+                --out-dir "$OUT"
+                --run-id "$GITHUB_RUN_ID")
+          STATE_IN=$(find resume -name gt_state.json 2>/dev/null | head -n 1 || true)
+          if [ -n "$STATE_IN" ]; then
+            echo "Resuming from $STATE_IN"
+            ARGS+=(--state-in "$STATE_IN")
+          fi
+          # Hand-reviewed classifications (plan step 9); E6 skips these URLs.
+          if [ -f data/rubio_gt_classified.csv ]; then
+            ARGS+=(--classified data/rubio_gt_classified.csv)
+          fi
+          python scripts/rubio_ground_truth.py "${ARGS[@]}"
+
+      - name: Summarize run
+        id: meta
+        if: always()
+        env:
+          OUT: ${{ steps.dirs.outputs.out }}
+        run: |
+          if [ ! -f "$OUT/run_meta.json" ]; then
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::no run_meta.json was written"
+            exit 0
+          fi
+          python - <<'EOF'
+          import json, os
+          m = json.load(open(os.path.join(os.environ['OUT'], 'run_meta.json')))
+          c = m['counts']
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"complete={'true' if m['complete'] else 'false'}\n")
+          lines = [
+              '### Rubio ground-truth crawl',
+              f"- complete: **{m['complete']}**  stages: `{m['stage_status']}`",
+              f"- requests this run: {m['requests_this_run']} / {m['max_requests']} "
+              f"(retries {m['retries_this_run']}); cumulative {m['requests_total']}",
+              f"- candidates {c['candidates']} (in corpus {c['in_corpus']}), "
+              f"probed {c['probed_total']}, still pending {c['probe_pending']}",
+              f"- ground truth {c['ground_truth_rows']} rows, in scope {c['in_scope']}, "
+              f"**gt_diff {c['gt_diff_rows']}**",
+              f"- classes: `{c['gt_class']}`",
+          ]
+          if m['budget_exhausted']:
+              lines.append(f"- stopped early: {m['budget_exhausted']} -- re-dispatch with "
+                           f"resume_artifact_run_id={m['run_id']}")
+          if m['fatal']:
+              lines.append(f"- FATAL: {m['fatal']}")
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('\n'.join(lines) + '\n')
+          EOF
+
+      - name: Upload ground-truth artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.dirs.outputs.artifact }}
+          path: ${{ steps.dirs.outputs.out }}/
+          if-no-files-found: warn
+          retention-days: 90
+
+  # Separate job so contents: write exists only when a prerelease was asked for.
+  prerelease:
+    needs: crawl
+    if: inputs.publish_prerelease && needs.crawl.outputs.complete == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write       # create the gt-* prerelease; nothing else
+    steps:
+      - name: Download ground-truth artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.crawl.outputs.artifact }}
+          path: gt/
+
+      - name: Publish gt-YYYY.MM.DD prerelease (never latest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GT_DATE: ${{ needs.crawl.outputs.date }}
+        run: |
+          TAG="gt-${GT_DATE//-/.}"
+          FILES=()
+          for f in ground_truth.csv gt_diff.csv probe.csv candidates.csv \
+                   drift_report.csv listing_snapshot.csv sitemap_inventory.csv run_meta.json; do
+            [ -f "gt/$f" ] && FILES+=("gt/$f")
+          done
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Same-day re-run: replace the assets, keep it a prerelease.
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+          else
+            gh release create "$TAG" "${FILES[@]}" \
+              --prerelease \
+              --latest=false \
+              --target "$GITHUB_SHA" \
+              --title "Rubio ground truth ${GT_DATE}" \
+              --notes "Read-only state.gov ground-truth crawl (run ${GITHUB_RUN_ID}). Not a corpus release; consumed by the coverage reconciler and verifier check AC."
+          fi

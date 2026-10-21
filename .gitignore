@@ -1,6 +1,13 @@
 # Data
-data/
+# data/* (not data/) so the negations below can re-include the checked-in
+# inputs CI reads; everything else under data/ is a run artifact.
 *.csv
+data/*
+!data/rubio_supplemental_urls.txt
+!data/rubio_coverage_exclusions.csv
+!data/rubio_gt_classified.csv
+# Small offline test fixtures (CSV ones included) must ship with the repo.
+!tests/fixtures/**/*.csv
 *.parquet
 *.pkl
 

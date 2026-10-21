@@ -296,6 +296,15 @@ _STAGE_DIR_LANGUAGE_RE = re.compile(
     r'vietnamese|hindi|urdu|swahili|english)|via\s+interpreter)\s*\.?\s*\)',
     re.IGNORECASE,
 )
+# Rubio path only (strip_stage_directions(rubio_path=True), audit X-09): "(Via
+# translation)", "( Via translation)", "(Via interpretation)" -- 17189, 17347, 17357,
+# 17530, 17630.  Kept out of _STAGE_DIR_LANGUAGE_RE so other secretaries' rows stay
+# bit-identical.
+_STAGE_DIR_VIA_TRANSLATION_RE = re.compile(
+    r'\(\s*(?:via|through)\s+(?:an\s+)?(?:translation|translator|interpretation|interpreter)'
+    r'\s*\.?\s*\)',
+    re.IGNORECASE,
+)
 _STAGE_DIR_TRANSCRIPT_RE = re.compile(
     r'\(\s*(?:off[- ]?mike|off\s+the\s+record|break|in\s+progress|'
     r'closed\s+press\s+coverage)\s*\.?\s*\)',
@@ -1274,9 +1283,12 @@ def strip_boundary_doc_codes(text: str) -> str:
     return head + text[200:-200] + tail
 
 
-def strip_stage_directions(text: str) -> str:
+def strip_stage_directions(text: str, rubio_path: bool = False) -> str:
     """Strip audience reactions, inaudible markers, delivery mode annotations, and
     ceremony stage directions from SOS Text only.
+
+    rubio_path=True also strips "(Via translation)"-type markers (audit X-09); the
+    default leaves every other secretary's output unchanged.
 
     Guard: if stripping would leave fewer than 5 words, return original text unchanged.
     This protects rows like Row 4833 where the stage direction IS the entire content
@@ -1284,9 +1296,12 @@ def strip_stage_directions(text: str) -> str:
     if not text:
         return text
     result = text
-    for pat in (_STAGE_DIR_AUDIENCE_RE, _STAGE_DIR_INAUDIBLE_RE,
-                _STAGE_DIR_LANGUAGE_RE, _STAGE_DIR_TRANSCRIPT_RE,
-                _STAGE_DIR_CEREMONY_RE):
+    pats = (_STAGE_DIR_AUDIENCE_RE, _STAGE_DIR_INAUDIBLE_RE,
+            _STAGE_DIR_LANGUAGE_RE, _STAGE_DIR_TRANSCRIPT_RE,
+            _STAGE_DIR_CEREMONY_RE)
+    if rubio_path:
+        pats += (_STAGE_DIR_VIA_TRANSLATION_RE,)
+    for pat in pats:
         result = pat.sub('', result)
     result = re.sub(r'[ \t]{2,}', ' ', result).strip()
     if len(result.split()) < 5:

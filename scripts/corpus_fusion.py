@@ -2381,8 +2381,13 @@ def _find_legacy_archive_content_anchor(
     return best if best is not None else -1
 
 
-def _find_speech_content_start(text: str, secretary: str) -> int:
+def _find_speech_content_start(text: str, secretary: str, half_fallback: bool = True) -> int:
     """Return char offset where the secretary's speech content starts in an archived state.gov page.
+
+    half_fallback=True (default, every existing caller): when no anchor is found the
+    second half of the text is returned, as before.  half_fallback=False (Rubio path,
+    audit X-08): return -1 instead, so the caller can use the content block or flag
+    the row -- the half-text cut started row 17095 mid-word ("hat they believe...").
 
     2017-2021 pages embed a full A-Z country navigation menu (~7,000+ chars) before speech content.
     2009-2017 pages have a location + date block that marks the end of navigation at ~2,304 chars.
@@ -2490,6 +2495,8 @@ def _find_speech_content_start(text: str, secretary: str) -> int:
     if m_qa:
         return 1500 + m_qa.start()
     # Fallback: second half of text skips the navigation menu
+    if not half_fallback:
+        return -1
     return max(len(text) // 2, 0)
 
 
