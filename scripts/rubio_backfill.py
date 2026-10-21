@@ -1658,9 +1658,22 @@ def _rubio_content_block(page: dict) -> tuple[str, str]:
     """
     raw_block = _extract_modern_state_content(page.get('raw_text', '') or '')
     ct = page.get('content_text') or ''
+    # Back-link footnotes (bare-number <sup> marker, definition + "↩︎") are
+    # parsed in raw_text's line layout. The per-block text glues the marker onto
+    # its word ("simply starting1 a war", footnote "ending"), so the correction is
+    # never applied and the footnote body trails the last turn (2025-12-04
+    # Institute of Peace remarks, held by Check AD in the 2026-10-21 dry run).
+    # Bracketed "[k]" footnotes survive per-block text and still use it.
+    if _has_backlink_footnotes(raw_block):
+        return raw_block, 'raw'
     if ct and raw_block and _alnum(ct) == _alnum(raw_block):
         return ct, 'per_block'
     return raw_block, 'raw'
+
+
+def _has_backlink_footnotes(block: str) -> bool:
+    """True when the block has a back-link footnote list (an own-line arrow)."""
+    return any(ln.strip() in _FN_BACKLINK for ln in block.split('\n'))
 
 
 # "[1]" / "[ii]" footnote markers (lowercase roman only, so "[I]t's" is not one).
@@ -1800,9 +1813,9 @@ def _apply_footnote_errata(block: str) -> tuple[str, int]:
             else:
                 drop.add(bl)                       # stray back-link arrow
                 # An orphan definition (nothing in the text references it) sitting
-                # just under the "____" separator is editorial residue, not speech:
-                # "________________ / ending / ↩︎" ends the 2025-12-04 Institute of
-                # Peace remarks. Drop it with its arrow.
+                # just under the "____" separator is part of the footnote list, not
+                # speech: drop it with its arrow rather than leave it trailing the
+                # last turn.
                 if (bl >= 1 and (bl - 1) not in drop and any(
                         _FN_SEPARATOR_RE.match(lines[k]) for k in range(max(0, bl - 4), bl - 1))):
                     drop.add(bl - 1)
