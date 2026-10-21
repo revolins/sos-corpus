@@ -1,0 +1,556 @@
+Location,count,expected_norm,expected_method
+"Washington, D.C.",11930,"Washington, D.C.",newsroom
+"New York City, New York",486,"New York City, New York",gazetteer_lhs
+"Brussels, Belgium",208,"Brussels, Belgium",gazetteer_lhs
+"Jerusalem, Israel",159,"Jerusalem, Israel",gazetteer_lhs
+"Paris, France",158,"Paris, France",gazetteer_lhs
+"London, United Kingdom",147,"London, United Kingdom",gazetteer_lhs
+"Beijing, China",132,"Beijing, China",gazetteer_lhs
+"Berlin, Germany",107,"Berlin, Germany",gazetteer_lhs
+"Tokyo, Japan",100,"Tokyo, Japan",gazetteer_lhs
+"New Delhi, India",89,"New Delhi, India",gazetteer_lhs
+"Moscow, Russia",88,"Moscow, Russia",gazetteer_lhs
+"Cairo, Egypt",81,"Cairo, Egypt",gazetteer_lhs
+"Kabul, Afghanistan",70,"Kabul, Afghanistan",gazetteer_lhs
+"Baghdad, Iraq",68,"Baghdad, Iraq",gazetteer_lhs
+"Rome, Italy",64,"Rome, Italy",gazetteer_lhs
+"Seoul, Republic of Korea",62,"Seoul, Republic of Korea",gazetteer_lhs
+"Islamabad, Pakistan",61,"Islamabad, Pakistan",gazetteer_lhs
+"Nairobi, Kenya",57,"Nairobi, Kenya",gazetteer_lhs
+"Vienna, Austria",53,"Vienna, Austria",gazetteer_lhs
+"Hanoi, Vietnam",52,"Hanoi, Vietnam",gazetteer_lhs
+"Geneva, Switzerland",51,"Geneva, Switzerland",gazetteer_lhs
+"Riyadh, Saudi Arabia",51,"Riyadh, Saudi Arabia",gazetteer_lhs
+"Kyiv, Ukraine",50,"Kyiv, Ukraine",gazetteer_lhs
+"Tel Aviv, Israel",47,"Tel Aviv, Israel",gazetteer_lhs
+"Mexico City, Mexico",45,"Mexico City, Mexico",gazetteer_lhs
+"New York, New York",45,"New York, New York",gazetteer_lhs
+"Doha, Qatar",45,"Doha, Qatar",gazetteer_lhs
+"Jakarta, Indonesia",44,"Jakarta, Indonesia",gazetteer_lhs
+"Bangkok, Thailand",43,"Bangkok, Thailand",gazetteer_lhs
+"Manila, Philippines",42,"Manila, Philippines",gazetteer_lhs
+"Kuala Lumpur, Malaysia",40,"Kuala Lumpur, Malaysia",gazetteer_lhs
+"Munich, Germany",38,"Munich, Germany",gazetteer_lhs
+"Prague, Czech Republic",36,"Prague, Czech Republic",gazetteer_lhs
+"Sharm el-Sheikh, Egypt",35,"Sharm el-Sheikh, Egypt",gazetteer_lhs
+"Port-au-Prince, Haiti",34,"Port-au-Prince, Haiti",gazetteer_lhs
+"Warsaw, Poland",34,"Warsaw, Poland",gazetteer_lhs
+"Jeddah, Saudi Arabia",33,"Jeddah, Saudi Arabia",gazetteer_lhs
+"Kuwait City, Kuwait",33,"Kuwait City, Kuwait",gazetteer_lhs
+"Lima, Peru",33,"Lima, Peru",gazetteer_lhs
+"Miami, Florida",32,"Miami, Florida",gazetteer_lhs
+"Ramallah, West Bank",32,"Ramallah, West Bank",gazetteer_lhs
+"Addis Ababa, Ethiopia",31,"Addis Ababa, Ethiopia",gazetteer_lhs
+"Santiago, Chile",31,"Santiago, Chile",gazetteer_lhs
+"Istanbul, Turkey",31,"Istanbul, Turkey",gazetteer_lhs
+"Vilnius, Lithuania",30,"Vilnius, Lithuania",gazetteer_lhs
+"Ankara, Turkey",30,"Ankara, Turkey",gazetteer_lhs
+"Phnom Penh, Cambodia",29,"Phnom Penh, Cambodia",gazetteer_lhs
+"Athens, Greece",29,"Athens, Greece",gazetteer_lhs
+"Davos, Switzerland",27,"Davos, Switzerland",gazetteer_lhs
+"Bali, Indonesia",27,"Bali, Indonesia",gazetteer_lhs
+"Amman, Jordan",26,"Amman, Jordan",gazetteer_lhs
+"Bogota, Colombia",26,"Bogota, Colombia",gazetteer_lhs
+"Ottawa, Canada",25,"Ottawa, Canada",gazetteer_lhs
+"Madrid, Spain",24,"Madrid, Spain",gazetteer_lhs
+"Tashkent, Uzbekistan",24,"Tashkent, Uzbekistan",gazetteer_lhs
+"Rabat, Morocco",24,"Rabat, Morocco",gazetteer_lhs
+"Singapore, Singapore",23,"Singapore, Singapore",gazetteer_lhs
+"Panama City, Panama",23,"Panama City, Panama",gazetteer_lhs
+"Abu Dhabi, United Arab Emirates",23,"Abu Dhabi, United Arab Emirates",gazetteer_lhs
+"The Hague, Netherlands",22,"The Hague, Netherlands",gazetteer_lhs
+"Manama, Bahrain",22,"Manama, Bahrain",gazetteer_lhs
+"Astana, Kazakhstan",22,"Astana, Kazakhstan",gazetteer_lhs
+"Quito, Ecuador",22,"Quito, Ecuador",gazetteer_lhs
+"Tbilisi, Georgia",22,"Tbilisi, Georgia",gazetteer_lhs
+"Melbourne, Australia",22,"Melbourne, Australia",gazetteer_lhs
+"Beirut, Lebanon",21,"Beirut, Lebanon",gazetteer_lhs
+"Shanghai, China",21,"Shanghai, China",gazetteer_lhs
+"Brasilia, Brazil",21,"Brasilia, Brazil",gazetteer_lhs
+"Buenos Aires, Argentina",21,"Buenos Aires, Argentina",gazetteer_lhs
+"Pretoria, South Africa",21,"Pretoria, South Africa",gazetteer_lhs
+"Budapest, Hungary",21,"Budapest, Hungary",gazetteer_lhs
+"Reykjavik, Iceland",20,"Reykjavik, Iceland",gazetteer_lhs
+"Algiers, Algeria",20,"Algiers, Algeria",gazetteer_lhs
+"San Francisco, California",19,"San Francisco, California",gazetteer_lhs
+"Los Angeles, California",19,"Los Angeles, California",gazetteer_lhs
+"Honolulu, Hawaii",19,"Honolulu, Hawaii",gazetteer_lhs
+"Shannon, Ireland",19,"Shannon, Ireland",gazetteer_lhs
+"Sydney, Australia",19,"Sydney, Australia",gazetteer_lhs
+"Chicago, Illinois",19,"Chicago, Illinois",gazetteer_lhs
+"Sofia, Bulgaria",19,"Sofia, Bulgaria",gazetteer_lhs
+"Abuja, Nigeria",19,"Abuja, Nigeria",gazetteer_lhs
+"Lisbon, Portugal",19,"Lisbon, Portugal",gazetteer_lhs
+"Dead Sea, Jordan",19,"Dead Sea, Jordan",gazetteer_lhs
+"Johannesburg, South Africa",18,"Johannesburg, South Africa",gazetteer_lhs
+"Tunis, Tunisia",18,"Tunis, Tunisia",gazetteer_lhs
+"Copenhagen, Denmark",18,"Copenhagen, Denmark",gazetteer_lhs
+"Stockholm, Sweden",18,"Stockholm, Sweden",gazetteer_lhs
+"Luanda, Angola",17,"Luanda, Angola",gazetteer_lhs
+"Dakar, Senegal",17,"Dakar, Senegal",gazetteer_lhs
+"Houston, Texas",16,"Houston, Texas",gazetteer_lhs
+"Kinshasa, Democratic Republic of the Congo",16,"Kinshasa, Democratic Republic of the Congo",gazetteer_lhs
+"Ulaanbaatar, Mongolia",16,"Ulaanbaatar, Mongolia",gazetteer_lhs
+"Joint Base Andrews, Maryland",16,"Joint Base Andrews, Maryland",gazetteer_lhs
+"Oslo, Norway",16,"Oslo, Norway",gazetteer_lhs
+"Bucharest, Romania",16,"Bucharest, Romania",gazetteer_lhs
+"Boston, Massachusetts",16,"Boston, Massachusetts",gazetteer_lhs
+"Bandar Seri Begawan, Brunei",16,"Bandar Seri Begawan, Brunei",gazetteer_lhs
+"Vientiane, Laos",16,"Vientiane, Laos",gazetteer_lhs
+"Sarajevo, Bosnia and Herzegovina",15,"Sarajevo, Bosnia and Herzegovina",gazetteer_lhs
+"Hong Kong, China",15,"Hong Kong, China",gazetteer_lhs
+"Palo Alto, California",15,"Palo Alto, California",gazetteer_lhs
+"Bishkek, Kyrgyzstan",14,"Bishkek, Kyrgyzstan",gazetteer_lhs
+"Tirana, Albania",13,"Tirana, Albania",gazetteer_lhs
+"Santo Domingo, Dominican Republic",13,"Santo Domingo, Dominican Republic",gazetteer_lhs
+"Rangoon, Burma",13,"Rangoon, Burma",gazetteer_lhs
+"Chisinau, Moldova",13,"Chisinau, Moldova",gazetteer_lhs
+"Wichita, Kansas",13,"Wichita, Kansas",gazetteer_lhs
+"San Jose, Costa Rica",12,"San Jose, Costa Rica",gazetteer_lhs
+"Zagreb, Croatia",12,"Zagreb, Croatia",gazetteer_lhs
+"Ho Chi Minh City, Vietnam",12,"Ho Chi Minh City, Vietnam",gazetteer_lhs
+"Port Moresby, Papua New Guinea",12,"Port Moresby, Papua New Guinea",gazetteer_lhs
+"Arlington, Virginia",12,"Arlington, Virginia",gazetteer_lhs
+"Philadelphia, Pennsylvania",12,"Philadelphia, Pennsylvania",gazetteer_lhs
+"Crawford, Texas",12,"Crawford, Texas",gazetteer_lhs
+"Bogotá, Colombia",12,"Bogota, Colombia",gazetteer_lhs
+"Riga, Latvia",12,"Riga, Latvia",gazetteer_lhs
+"Rio de Janeiro, Brazil",11,"Rio de Janeiro, Brazil",gazetteer_lhs
+"Nashville, Tennessee",11,"Nashville, Tennessee",gazetteer_lhs
+"Dar es Salaam, Tanzania",11,"Dar es Salaam, Tanzania",gazetteer_lhs
+"San Salvador, El Salvador",11,"San Salvador, El Salvador",gazetteer_lhs
+"Anchorage, Alaska",11,"Anchorage, Alaska",gazetteer_lhs
+"Andrews Air Force Base, Maryland",10,"Andrews Air Force Base, Maryland",gazetteer_lhs
+"Annapolis, Maryland",10,"Annapolis, Maryland",gazetteer_lhs
+"Vancouver, Canada",10,"Vancouver, Canada",gazetteer_lhs
+"Kiev, Ukraine",10,"Kiev, Ukraine",gazetteer_lhs
+"Bonn, Germany",10,"Bonn, Germany",gazetteer_lhs
+"Luxembourg City, Luxembourg",10,"Luxembourg City, Luxembourg",gazetteer_lhs
+"Atlanta, Georgia",10,"Atlanta, Georgia",gazetteer_lhs
+"Bratislava, Slovakia",10,"Bratislava, Slovakia",gazetteer_lhs
+"Florence, Italy",10,"Florence, Italy",gazetteer_lhs
+"Marrakech, Morocco",10,"Marrakech, Morocco",gazetteer_lhs
+"Wellington, New Zealand",10,"Wellington, New Zealand",gazetteer_lhs
+"Guatemala City, Guatemala",9,"Guatemala City, Guatemala",gazetteer_lhs
+"Denver, Colorado",9,"Denver, Colorado",gazetteer_lhs
+"Cologne, Germany",9,"Cologne, Germany",gazetteer_lhs
+"Pristina, Kosovo",9,"Pristina, Kosovo",gazetteer_lhs
+"Cartagena, Colombia",9,"Cartagena, Colombia",gazetteer_lhs
+"Los Cabos, Mexico",9,"Los Cabos, Mexico",gazetteer_lhs
+"Birmingham, Alabama",9,"Birmingham, Alabama",gazetteer_lhs
+"Liverpool, United Kingdom",9,"Liverpool, United Kingdom",gazetteer_lhs
+"Salt Lake City, Utah",9,"Salt Lake City, Utah",gazetteer_lhs
+"Erbil, Iraq",9,"Erbil, Iraq",gazetteer_lhs
+"Montreal, Canada",9,"Montreal, Canada",gazetteer_lhs
+"Tallinn, Estonia",9,"Tallinn, Estonia",gazetteer_lhs
+"Lusaka, Zambia",9,"Lusaka, Zambia",gazetteer_lhs
+"Lausanne, Switzerland",9,"Lausanne, Switzerland",gazetteer_lhs
+"Manhattan, Kansas",9,"Manhattan, Kansas",gazetteer_lhs
+"Auckland, New Zealand",8,"Auckland, New Zealand",gazetteer_lhs
+"Colombo, Sri Lanka",8,"Colombo, Sri Lanka",gazetteer_lhs
+"Dushanbe, Tajikistan",8,"Dushanbe, Tajikistan",gazetteer_lhs
+"Tripoli, Libya",8,"Tripoli, Libya",gazetteer_lhs
+"Yerevan, Armenia",8,"Yerevan, Armenia",gazetteer_lhs
+"Belgrade, Serbia",8,"Belgrade, Serbia",gazetteer_lhs
+"Christchurch, New Zealand",8,"Christchurch, New Zealand",gazetteer_lhs
+"Naypyitaw, Burma",8,"Naypyitaw, Burma",gazetteer_lhs
+"Havana, Cuba",8,"Havana, Cuba",gazetteer_lhs
+"Cape Town, South Africa",7,"Cape Town, South Africa",gazetteer_lhs
+"Dhaka, Bangladesh",7,"Dhaka, Bangladesh",gazetteer_lhs
+"St. Petersburg, Russia",7,"St. Petersburg, Russia",gazetteer_lhs
+"Nova Scotia, Canada",7,"Nova Scotia, Canada",gazetteer_lhs
+"Aspen, Colorado",7,"Aspen, Colorado",gazetteer_lhs
+"Baku, Azerbaijan",7,"Baku, Azerbaijan",gazetteer_lhs
+"Muscat, Oman",7,"Muscat, Oman",gazetteer_lhs
+"Kingston, Jamaica",7,"Kingston, Jamaica",gazetteer_lhs
+"Rovaniemi, Finland",7,"Rovaniemi, Finland",gazetteer_lhs
+"Bethesda, Maryland",6,"Bethesda, Maryland",gazetteer_lhs
+"Louisville, Kentucky",6,"Louisville, Kentucky",gazetteer_lhs
+"Skopje, North Macedonia",6,"Skopje, North Macedonia",gazetteer_lhs
+"Pyongyang, North Korea",6,"Pyongyang, North Korea",gazetteer_lhs
+"Kampala, Uganda",6,"Kampala, Uganda",gazetteer_lhs
+"Krakow, Poland",6,"Krakow, Poland",gazetteer_lhs
+"Khartoum, Sudan",6,"Khartoum, Sudan",gazetteer_lhs
+"Al Fashar, Sudan",6,"Al Fashar, Sudan",gazetteer_lhs
+"Monrovia, Liberia",6,"Monrovia, Liberia",gazetteer_lhs
+"Perth, Australia",6,"Perth, Australia",gazetteer_lhs
+"Abidjan, Côte d'Ivoire",6,"Abidjan, Côte d'Ivoire",gazetteer_lhs
+"Norfolk, Virginia",6,"Norfolk, Virginia",gazetteer_lhs
+"Vladivostok, Russia",6,"Vladivostok, Russia",gazetteer_lhs
+"Stanford, California",6,"Stanford, California",gazetteer_lhs
+"Orlando, Florida",6,"Orlando, Florida",gazetteer_lhs
+"Indianapolis, Indiana",6,"Indianapolis, Indiana",gazetteer_lhs
+"Madison, Wisconsin",6,"Madison, Wisconsin",gazetteer_lhs
+"Rzeszow, Poland",6,"Rzeszow, Poland",gazetteer_lhs
+"Brisbane, Australia",6,"Brisbane, Australia",gazetteer_lhs
+"Cambridge, Massachusetts",5,"Cambridge, Massachusetts",gazetteer_lhs
+"Port of Spain, Trinidad and Tobago",5,"Port of Spain, Trinidad and Tobago",gazetteer_lhs
+"Rambouillet, France",5,"Rambouillet, France",gazetteer_lhs
+"Bamako, Mali",5,"Bamako, Mali",gazetteer_lhs
+"Mumbai, India",5,"Mumbai, India",gazetteer_lhs
+"Bridgetown, Barbados",5,"Bridgetown, Barbados",gazetteer_lhs
+"Detroit, Michigan",5,"Detroit, Michigan",gazetteer_lhs
+"Blackburn, United Kingdom",5,"Blackburn, United Kingdom",gazetteer_lhs
+"Kyoto, Japan",5,"Kyoto, Japan",gazetteer_lhs
+"Juba, South Sudan",5,"Juba, South Sudan",gazetteer_lhs
+"Rarotonga, Cook Islands",5,"Rarotonga, Cook Islands",gazetteer_lhs
+"Sochi, Russia",5,"Sochi, Russia",gazetteer_lhs
+"Kigali, Rwanda",5,"Kigali, Rwanda",gazetteer_lhs
+"Georgetown, Guyana",5,"Georgetown, Guyana",gazetteer_lhs
+"Pittsburgh, Pennsylvania",5,"Pittsburgh, Pennsylvania",gazetteer_lhs
+"Karuizawa, Japan",5,"Karuizawa, Japan",gazetteer_lhs
+"Caracas, Venezuela",4,"Caracas, Venezuela",gazetteer_lhs
+"Bern, Switzerland",4,"Bern, Switzerland",gazetteer_lhs
+"Columbus, Ohio",4,"Columbus, Ohio",gazetteer_lhs
+"College Park, Maryland",4,"College Park, Maryland",gazetteer_lhs
+"New Orleans, Louisiana",4,"New Orleans, Louisiana",gazetteer_lhs
+"Jericho, West Bank",4,"Jericho, West Bank",gazetteer_lhs
+"Seattle, Washington",4,"Seattle, Washington",gazetteer_lhs
+"Damascus, Syria",4,"Damascus, Syria",gazetteer_lhs
+"Whistler, Canada",4,"Whistler, Canada",gazetteer_lhs
+"Belfast, Northern Ireland",4,"Belfast, Northern Ireland",gazetteer_lhs
+"Aqaba, Jordan",4,"Aqaba, Jordan",gazetteer_lhs
+"Ft. Lauderdale, Florida",4,"Ft. Lauderdale, Florida",gazetteer_lhs
+"Busan, Republic of Korea",4,"Busan, Republic of Korea",gazetteer_lhs
+"Greensboro, North Carolina",4,"Greensboro, North Carolina",gazetteer_lhs
+"Medellin, Colombia",4,"Medellin, Colombia",gazetteer_lhs
+"Menlo Park, California",4,"Menlo Park, California",gazetteer_lhs
+"Monterrey, Mexico",4,"Monterrey, Mexico",gazetteer_lhs
+"Dubai, United Arab Emirates",4,"Dubai, United Arab Emirates",gazetteer_lhs
+"Guanajuato, Mexico",4,"Guanajuato, Mexico",gazetteer_lhs
+"Lilongwe, Malawi",4,"Lilongwe, Malawi",gazetteer_lhs
+"St. Briac, France",4,"St. Briac, France",gazetteer_lhs
+"Djibouti, Djibouti",4,"Djibouti, Djibouti",gazetteer_lhs
+"Antalya, Turkey",4,"Antalya, Turkey",gazetteer_lhs
+"Valparaiso, Chile",4,"Valparaiso, Chile",gazetteer_lhs
+"Silver Spring, Maryland",4,"Silver Spring, Maryland",gazetteer_lhs
+"Hiroshima, Japan",4,"Hiroshima, Japan",gazetteer_lhs
+"Des Moines, Iowa",4,"Des Moines, Iowa",gazetteer_lhs
+"Xinjiang, China",4,"Xinjiang, China",gazetteer_lhs
+"Niamey, Niger",4,"Niamey, Niger",gazetteer_lhs
+"Luleå, Sweden",4,"Luleå, Sweden",gazetteer_lhs
+"Helsinki, Finland",3,"Helsinki, Finland",gazetteer_lhs
+"Sintra, Portugal",3,"Sintra, Portugal",gazetteer_lhs
+"Mobile, Alabama",3,"Mobile, Alabama",gazetteer_lhs
+"Quebec, Canada",3,"Quebec, Canada",gazetteer_lhs
+"Samarkand, Uzbekistan",3,"Samarkand, Uzbekistan",gazetteer_lhs
+"Gaborone, Botswana",3,"Gaborone, Botswana",gazetteer_lhs
+"Gander, Canada",3,"Gander, Canada",gazetteer_lhs
+"College Station, Texas",3,"College Station, Texas",gazetteer_lhs
+"Princeton, New Jersey",3,"Princeton, New Jersey",gazetteer_lhs
+"Cincinnati, Ohio",3,"Cincinnati, Ohio",gazetteer_lhs
+"Phuket, Thailand",3,"Phuket, Thailand",gazetteer_lhs
+"Dallas, Texas",3,"Dallas, Texas",gazetteer_lhs
+"Montgomery, Alabama",3,"Montgomery, Alabama",gazetteer_lhs
+"Puerto Vallarta, Mexico",3,"Puerto Vallarta, Mexico",gazetteer_lhs
+"Belfast, United Kingdom",3,"Belfast, United Kingdom",gazetteer_lhs
+"Lahore, Pakistan",3,"Lahore, Pakistan",gazetteer_lhs
+"Sana'a, Yemen",3,"Sana'a, Yemen",gazetteer_lhs
+"Batumi, Georgia",3,"Batumi, Georgia",gazetteer_lhs
+"Antigua, Guatemala",3,"Antigua, Guatemala",gazetteer_lhs
+"Montreux, Switzerland",3,"Montreux, Switzerland",gazetteer_lhs
+"Gujarat, India",3,"Gujarat, India",gazetteer_lhs
+"Bloomington, Indiana",3,"Bloomington, Indiana",gazetteer_lhs
+"Austin, Texas",3,"Austin, Texas",gazetteer_lhs
+"Luxembourg, Luxembourg",3,"Luxembourg, Luxembourg",gazetteer_lhs
+"Overland Park, Kansas",3,"Overland Park, Kansas",gazetteer_lhs
+"Kansas City, Kansas",3,"Kansas City, Kansas",gazetteer_lhs
+"Cucuta, Colombia",3,"Cucuta, Colombia",gazetteer_lhs
+"Tehran, Iran",3,"Tehran, Iran",gazetteer_lhs
+"Nur-Sultan, Kazakhstan",3,"Nur-Sultan, Kazakhstan",gazetteer_lhs
+"Glasgow, United Kingdom",3,"Glasgow, United Kingdom",gazetteer_lhs
+"Attard, Malta",3,"Attard, Malta",gazetteer_lhs
+"Helsingborg, Sweden",3,"Helsingborg, Sweden",gazetteer_lhs
+"Wingate, North Carolina",2,"Wingate, North Carolina",gazetteer_lhs
+"Wilmington, Delaware",2,"Wilmington, Delaware",gazetteer_lhs
+"Andersen Air Force Base, Guam",2,"Andersen Air Force Base, Guam",gazetteer_lhs
+"Alexandria, Egypt",2,"Alexandria, Egypt",gazetteer_lhs
+"Peshawar, Pakistan",2,"Peshawar, Pakistan",gazetteer_lhs
+"Fairfax, Virginia",2,"Fairfax, Virginia",gazetteer_lhs
+"Seneca Falls, New York",2,"Seneca Falls, New York",gazetteer_lhs
+"Milwaukee, Wisconsin",2,"Milwaukee, Wisconsin",gazetteer_lhs
+"Independence, Missouri",2,"Independence, Missouri",gazetteer_lhs
+"Tucson, Arizona",2,"Tucson, Arizona",gazetteer_lhs
+"Near Skopje, Macedonia",2,"Near Skopje, Macedonia",gazetteer_lhs
+"Skopje, Macedonia",2,"Skopje, Macedonia",gazetteer_lhs
+"Yokota Air Base, Japan",2,"Yokota Air Base, Japan",gazetteer_lhs
+"Camp Bondsteel, Kosovo",2,"Camp Bondsteel, Kosovo",gazetteer_lhs
+"Kano, Nigeria",2,"Kano, Nigeria",gazetteer_lhs
+"Brno, Czech Republic",2,"Brno, Czech Republic",gazetteer_lhs
+"Banja Luka, Bosnia and Herzegovina",2,"Banja Luka, Bosnia and Herzegovina",gazetteer_lhs
+"Venice, Italy",2,"Venice, Italy",gazetteer_lhs
+"Gdansk, Poland",2,"Gdansk, Poland",gazetteer_lhs
+"Charlottesville, Virginia",2,"Charlottesville, Virginia",gazetteer_lhs
+"Albuquerque, New Mexico",2,"Albuquerque, New Mexico",gazetteer_lhs
+"Key West, Florida",2,"Key West, Florida",gazetteer_lhs
+"Borg El-Arab Airport, Egypt",2,"Borg El-Arab Airport, Egypt",gazetteer_lhs
+"Canberra, Australia",2,"Canberra, Australia",gazetteer_lhs
+"Nassau, The Bahamas",2,"Nassau, The Bahamas",gazetteer_lhs
+"Libreville, Gabon",2,"Libreville, Gabon",gazetteer_lhs
+"Praia, Cape Verde",2,"Praia, Cape Verde",gazetteer_lhs
+"Cavtat, Croatia",2,"Cavtat, Croatia",gazetteer_lhs
+"San Juan, Puerto Rico",2,"San Juan, Puerto Rico",gazetteer_lhs
+"Halabja, Iraq",2,"Halabja, Iraq",gazetteer_lhs
+"Naivasha, Kenya",2,"Naivasha, Kenya",gazetteer_lhs
+"Tegucigalpa, Honduras",2,"Tegucigalpa, Honduras",gazetteer_lhs
+"Marrakesh, Morocco",2,"Marrakesh, Morocco",gazetteer_lhs
+"Normandy, France",2,"Normandy, France",gazetteer_lhs
+"Igaliku, Greenland",2,"Igaliku, Greenland",gazetteer_lhs
+"São Paulo, Brazil",2,"São Paulo, Brazil",gazetteer_lhs
+"Sao Paulo, Brazil",2,"São Paulo, Brazil",gazetteer_lhs
+"St. George's, Grenada",2,"St. George's, Grenada",gazetteer_lhs
+"Banda Aceh, Indonesia",2,"Banda Aceh, Indonesia",gazetteer_lhs
+"Fort Lauderdale, Florida",2,"Fort Lauderdale, Florida",gazetteer_lhs
+"Nassau, Bahamas",2,"Nassau, Bahamas",gazetteer_lhs
+"Camp David, Maryland",2,"Camp David, Maryland",gazetteer_lhs
+"Simi Valley, California",2,"Simi Valley, California",gazetteer_lhs
+"Potsdam, Germany",2,"Potsdam, Germany",gazetteer_lhs
+"Zurich, Switzerland",2,"Zurich, Switzerland",gazetteer_lhs
+"Kandahar, Afghanistan",2,"Kandahar, Afghanistan",gazetteer_lhs
+"Salvador da Bahia, Brazil",2,"Salvador da Bahia, Brazil",gazetteer_lhs
+"Mountain View, California",2,"Mountain View, California",gazetteer_lhs
+"Rawalpindi, Pakistan",2,"Rawalpindi, Pakistan",gazetteer_lhs
+"Laguna Phuket, Thailand",2,"Laguna Phuket, Thailand",gazetteer_lhs
+"Goma, Democratic Republic of the Congo",2,"Goma, Democratic Republic of the Congo",gazetteer_lhs
+"Dublin, Ireland",2,"Dublin, Ireland",gazetteer_lhs
+"Montego Bay, Jamaica",2,"Montego Bay, Jamaica",gazetteer_lhs
+"Nusa Dua, Indonesia",2,"Nusa Dua, Indonesia",gazetteer_lhs
+"Little Rock, Arkansas",2,"Little Rock, Arkansas",gazetteer_lhs
+"Valletta, Malta",2,"Valletta, Malta",gazetteer_lhs
+"New Haven, Connecticut",2,"New Haven, Connecticut",gazetteer_lhs
+"Tampa, Florida",2,"Tampa, Florida",gazetteer_lhs
+"Siem Reap, Cambodia",2,"Siem Reap, Cambodia",gazetteer_lhs
+"Benghazi, Libya",2,"Benghazi, Libya",gazetteer_lhs
+"Caracol, Haiti",2,"Caracol, Haiti",gazetteer_lhs
+"Adelaide, Australia",2,"Adelaide, Australia",gazetteer_lhs
+"Kiruna, Sweden",2,"Kiruna, Sweden",gazetteer_lhs
+"Wales, United Kingdom",2,"Wales, United Kingdom",gazetteer_lhs
+"Mogadishu, Somalia",2,"Mogadishu, Somalia",gazetteer_lhs
+"Milan, Italy",2,"Milan, Italy",gazetteer_lhs
+"Nicosia, Cyprus",2,"Nicosia, Cyprus",gazetteer_lhs
+"Hangzhou, China",2,"Hangzhou, China",gazetteer_lhs
+"Hamburg, Germany",2,"Hamburg, Germany",gazetteer_lhs
+"West Palm Beach, Florida",2,"West Palm Beach, Florida",gazetteer_lhs
+"Lucca, Italy",2,"Lucca, Italy",gazetteer_lhs
+"Fairbanks, Alaska",2,"Fairbanks, Alaska",gazetteer_lhs
+"Orzysz, Poland",2,"Orzysz, Poland",gazetteer_lhs
+"Vitacura, Chile",2,"Vitacura, Chile",gazetteer_lhs
+"Asuncion, Paraguay",2,"Asuncion, Paraguay",gazetteer_lhs
+"Beverly Hills, California",2,"Beverly Hills, California",gazetteer_lhs
+"Guayaquil, Ecuador",2,"Guayaquil, Ecuador",gazetteer_lhs
+"Mount Pleasant, South Carolina",2,"Mount Pleasant, South Carolina",gazetteer_lhs
+"Idlib, Syria",2,"Idlib, Syria",gazetteer_lhs
+"Yorba Linda, California",2,"Yorba Linda, California",gazetteer_lhs
+"Ljubljana, Slovenia",2,"Ljubljana, Slovenia",gazetteer_lhs
+"Vila Bled, Slovenia",2,"Vila Bled, Slovenia",gazetteer_lhs
+"Paramaribo, Suriname",2,"Paramaribo, Suriname",gazetteer_lhs
+"Plano, Texas",2,"Plano, Texas",gazetteer_lhs
+"Crete, Greece",2,"Crete, Greece",gazetteer_lhs
+"Dubrovnik, Croatia",2,"Dubrovnik, Croatia",gazetteer_lhs
+"Male, Maldives",2,"Male, Maldives",gazetteer_lhs
+"Al Udeid Airbase, Qatar",2,"Al Udeid Airbase, Qatar",gazetteer_lhs
+"Rzeszów, Poland",2,"Rzeszow, Poland",gazetteer_lhs
+"West Lafayette, Indiana",2,"West Lafayette, Indiana",gazetteer_lhs
+"Münster, Germany",2,"Münster, Germany",gazetteer_lhs
+"Rathaus Münster, Germany",2,"Rathaus Münster, Germany",gazetteer_lhs
+"National Harbor, Maryland",2,"National Harbor, Maryland",gazetteer_lhs
+"Nuku'alofa, Tonga",2,"Nuku'alofa, Tonga",gazetteer_lhs
+"Praia, Cabo Verde",2,"Praia, Cabo Verde",gazetteer_lhs
+"Leuven, Belgium",2,"Leuven, Belgium",gazetteer_lhs
+"Capri, Italy",2,"Capri, Italy",gazetteer_lhs
+"Colleville-sur-Mer, France",2,"Colleville-sur-Mer, France",gazetteer_lhs
+"Fiuggi, Italy",2,"Fiuggi, Italy",gazetteer_lhs
+"Homestead, Florida",2,"Homestead, Florida",gazetteer_lhs
+"Hallandale, Florida",2,"Hallandale, Florida",gazetteer_lhs
+"Barranquilla, Colombia",2,"Barranquilla, Colombia",gazetteer_lhs
+"Demilitarized Zone, Republic of Korea",1,"Demilitarized Zone, Republic of Korea",gazetteer_lhs
+"Grand Rapids, Michigan",1,"Grand Rapids, Michigan",gazetteer_lhs
+"Camp Tuluche, Guatemala",1,"Camp Tuluche, Guatemala",gazetteer_lhs
+"South Hadley, Massachusetts",1,"South Hadley, Massachusetts",gazetteer_lhs
+"Prevrsac, Croatia",1,"Prevrsac, Croatia",gazetteer_lhs
+"Brcko Bridge, Bosnia and Herzegovina",1,"Brcko Bridge, Bosnia and Herzegovina",gazetteer_lhs
+"Falls Church, Virginia",1,"Falls Church, Virginia",gazetteer_lhs
+"Abha, Saudi Arabia",1,"Abha, Saudi Arabia",gazetteer_lhs
+"Bronx, New York",1,"Bronx, New York",gazetteer_lhs
+"Gulu, Uganda",1,"Gulu, Uganda",gazetteer_lhs
+"Cabinda, Angola",1,"Cabinda, Angola",gazetteer_lhs
+"Harare, Zimbabwe",1,"Harare, Zimbabwe",gazetteer_lhs
+"Columbia, South Carolina",1,"Columbia, South Carolina",gazetteer_lhs
+"Black Rock, Trinidad and Tobago",1,"Black Rock, Trinidad and Tobago",gazetteer_lhs
+"Colchester, Vermont",1,"Colchester, Vermont",gazetteer_lhs
+"Nashua, New Hampshire",1,"Nashua, New Hampshire",gazetteer_lhs
+"New London, Connecticut",1,"New London, Connecticut",gazetteer_lhs
+"Minneapolis, Minnesota",1,"Minneapolis, Minnesota",gazetteer_lhs
+"Xian, China",1,"Xian, China",gazetteer_lhs
+"Ramstein, Germany",1,"Ramstein, Germany",gazetteer_lhs
+"Dar es-Salaam, Tanzania",1,"Dar es Salaam, Tanzania",gazetteer_lhs
+"Bijeljina, Bosnia and Herzegovina",1,"Bijeljina, Bosnia and Herzegovina",gazetteer_lhs
+"Brasília, Brazil",1,"Brasilia, Brazil",gazetteer_lhs
+"Erez, Israel",1,"Erez, Israel",gazetteer_lhs
+"San Jose, California",1,"San Jose, California",gazetteer_lhs
+"Vancouver, Washington",1,"Vancouver, Washington",gazetteer_lhs
+"Portland, Oregon",1,"Portland, Oregon",gazetteer_lhs
+"Lyon, France",1,"Lyon, France",gazetteer_lhs
+"Middletown, Connecticut",1,"Middletown, Connecticut",gazetteer_lhs
+"Yucatan, Mexico",1,"Yucatan, Mexico",gazetteer_lhs
+"Chiang Mai, Thailand",1,"Chiang Mai, Thailand",gazetteer_lhs
+"Elemendorf Air Force Base, Alaska",1,"Elemendorf Air Force Base, Alaska",gazetteer_lhs
+"Gaza City, Gaza",1,"Gaza City, Gaza",gazetteer_lhs
+"Bangor, Maine",1,"Bangor, Maine",gazetteer_lhs
+"Freetown, Sierra Leone",1,"Freetown, Sierra Leone",gazetteer_lhs
+"Ferizaj, Kosovo",1,"Ferizaj, Kosovo",gazetteer_lhs
+"Cartagena Port, Colombia",1,"Cartagena Port, Colombia",gazetteer_lhs
+"Banski Dvor, Bosnia and Herzegovina",1,"Banski Dvor, Bosnia and Herzegovina",gazetteer_lhs
+"Andover, Massachusetts",1,"Andover, Massachusetts",gazetteer_lhs
+"Bukhara, Uzbekistan",1,"Bukhara, Uzbekistan",gazetteer_lhs
+"Berkeley, California",1,"Berkeley, California",gazetteer_lhs
+"Gdynia, Poland",1,"Gdynia, Poland",gazetteer_lhs
+"Bath, Maine",1,"Bath, Maine",gazetteer_lhs
+"Miyazaki, Japan",1,"Miyazaki, Japan",gazetteer_lhs
+"Pasadena, California",1,"Pasadena, California",gazetteer_lhs
+"La Paz, Bolivia",1,"La Paz, Bolivia",gazetteer_lhs
+"Purcellville, Virginia",1,"Purcellville, Virginia",gazetteer_lhs
+"Keflavik, Iceland",1,"Keflavik, Iceland",gazetteer_lhs
+"Bordeaux, France",1,"Bordeaux, France",gazetteer_lhs
+"Dresden, Germany",1,"Dresden, Germany",gazetteer_lhs
+"Palm Beach, Florida",1,"Palm Beach, Florida",gazetteer_lhs
+"Port Louis, Mauritius",1,"Port Louis, Mauritius",gazetteer_lhs
+"Brdo Pri Kranju, Slovenia",1,"Brdo Pri Kranju, Slovenia",gazetteer_lhs
+"Ramallah, Egypt",1,"Ramallah, Egypt",gazetteer_lhs
+"Vienna, Virginia",1,"Vienna, Virginia",gazetteer_lhs
+"Kathmandu, Nepal",1,"Kathmandu, Nepal",gazetteer_lhs
+"Tacoma, Washington",1,"Tacoma, Washington",gazetteer_lhs
+"Agadir, Morocco",1,"Agadir, Morocco",gazetteer_lhs
+"Casablanca, Morocco",1,"Casablanca, Morocco",gazetteer_lhs
+"Safed, Israel",1,"Safed, Israel",gazetteer_lhs
+"Sigonella, Italy",1,"Sigonella, Italy",gazetteer_lhs
+"UN Headquarters, New York",1,"UN Headquarters, New York",gazetteer_lhs
+"Managua, Nicaragua",1,"Managua, Nicaragua",gazetteer_lhs
+"Maastricht, Netherlands",1,"Maastricht, Netherlands",gazetteer_lhs
+"Winston-Salem, North Carolina",1,"Winston-Salem, North Carolina",gazetteer_lhs
+"Al Fasher, Sudan",1,"Al Fasher, Sudan",gazetteer_lhs
+"St. George's, Canada",1,"St. George's, Canada",gazetteer_lhs
+"Manaus, Brazil",1,"Manaus, Brazil",gazetteer_lhs
+"Galle, Sri Lanka",1,"Galle, Sri Lanka",gazetteer_lhs
+"Irbil, Iraq",1,"Irbil, Iraq",gazetteer_lhs
+"Takuapa, Thailand",1,"Takuapa, Thailand",gazetteer_lhs
+"Bayou La Batre, Alabama",1,"Bayou La Batre, Alabama",gazetteer_lhs
+"Tuscaloosa, Alabama",1,"Tuscaloosa, Alabama",gazetteer_lhs
+"Mosul, Iraq",1,"Mosul, Iraq",gazetteer_lhs
+"Blackpool, United Kingdom",1,"Blackpool, United Kingdom",gazetteer_lhs
+"Heiligendamm, Germany",1,"Heiligendamm, Germany",gazetteer_lhs
+"Strelna, Russia",1,"Strelna, Russia",gazetteer_lhs
+"Halifax NS, Canada",1,"Halifax NS, Canada",gazetteer_lhs
+"Stellarton, Canada",1,"Stellarton, Canada",gazetteer_lhs
+"Elmendorf AFB, Alaska",1,"Elmendorf AFB, Alaska",gazetteer_lhs
+"Luxor, Egypt",1,"Luxor, Egypt",gazetteer_lhs
+"Merida, Mexico",1,"Merida, Mexico",gazetteer_lhs
+"Aswan, Egypt",1,"Aswan, Egypt",gazetteer_lhs
+"San Diego, California",1,"San Diego, California",gazetteer_lhs
+"East Palo Alto, California",1,"East Palo Alto, California",gazetteer_lhs
+"Silicon Valley, California",1,"Silicon Valley, California",gazetteer_lhs
+"Crystal City, Virginia",1,"Crystal City, Virginia",gazetteer_lhs
+"Dujiangyan, China",1,"Dujiangyan, China",gazetteer_lhs
+"Le Fort de Bregancon, France",1,"Le Fort de Bregancon, France",gazetteer_lhs
+"Long Beach, California",1,"Long Beach, California",gazetteer_lhs
+"Jenin, West Bank",1,"Jenin, West Bank",gazetteer_lhs
+"San Pedro Sula, Honduras",1,"San Pedro Sula, Honduras",gazetteer_lhs
+"Niagara Falls, New York",1,"Niagara Falls, New York",gazetteer_lhs
+"Niagara Falls, Canada",1,"Niagara Falls, Canada",gazetteer_lhs
+"Durban, South Africa",1,"Durban, South Africa",gazetteer_lhs
+"Sal, Cape Verde",1,"Sal, Cape Verde",gazetteer_lhs
+"Kazan, Russia",1,"Kazan, Russia",gazetteer_lhs
+"Montevideo, Uruguay",1,"Montevideo, Uruguay",gazetteer_lhs
+"Landsdowne, Virginia",1,"Landsdowne, Virginia",gazetteer_lhs
+"Gifu, Japan",1,"Gifu, Japan",gazetteer_lhs
+"Pago Pago, Samoa",1,"Pago Pago, Samoa",gazetteer_lhs
+"Manas Transit Center, Kyrgyzstan",1,"Manas Transit Center, Kyrgyzstan",gazetteer_lhs
+"Chabahar, Iran",1,"Chabahar, Iran",gazetteer_lhs
+"Windhoek, Namibia",1,"Windhoek, Namibia",gazetteer_lhs
+"Nuuk, Greenland",1,"Nuuk, Greenland",gazetteer_lhs
+"Chennai, India",1,"Chennai, India",gazetteer_lhs
+"Shenzhen, China",1,"Shenzhen, China",gazetteer_lhs
+"Nay Pyi Taw, Burma",1,"Nay Pyi Taw, Burma",gazetteer_lhs
+"Lexington, Virginia",1,"Lexington, Virginia",gazetteer_lhs
+"Syracuse, New York",1,"Syracuse, New York",gazetteer_lhs
+"Kolkata, India",1,"Kolkata, India",gazetteer_lhs
+"Tromso, Norway",1,"Tromso, Norway",gazetteer_lhs
+"Wellesley, Massachusetts",1,"Wellesley, Massachusetts",gazetteer_lhs
+"Rio De Janeiro, Brazil",1,"Rio de Janeiro, Brazil",gazetteer_lhs
+"Jersey City, New Jersey",1,"Jersey City, New Jersey",gazetteer_lhs
+"Cotonou, Benin",1,"Cotonou, Benin",gazetteer_lhs
+"Dili, Timor-Leste",1,"Dili, Timor-Leste",gazetteer_lhs
+"Cottesloe Beach, Australia",1,"Cottesloe Beach, Australia",gazetteer_lhs
+"Marriott Zamalek Hotel Cairo, Egypt",1,"Marriott Zamalek Hotel Cairo, Egypt",gazetteer_lhs
+"Consulate General Istanbul Istanbul, Turkey",1,"Consulate General Istanbul Istanbul, Turkey",gazetteer_lhs
+"Tervuren, Belgium",1,"Tervuren, Belgium",gazetteer_lhs
+"Za'atri, Jordan",1,"Za'atri, Jordan",gazetteer_lhs
+"Lask, Poland",1,"Lask, Poland",gazetteer_lhs
+"NATO Brussels, Belgium",1,"NATO Brussels, Belgium",gazetteer_lhs
+"Mekong Delta, Vietnam",1,"Mekong Delta, Vietnam",gazetteer_lhs
+"Tacloban, Philippines",1,"Tacloban, Philippines",gazetteer_lhs
+"Chestnut Hill, Massachusetts",1,"Chestnut Hill, Massachusetts",gazetteer_lhs
+"Honiara, Solomon Islands",1,"Honiara, Solomon Islands",gazetteer_lhs
+"Lagos, Nigeria",1,"Lagos, Nigeria",gazetteer_lhs
+"Lubeck, Germany",1,"Lubeck, Germany",gazetteer_lhs
+"Iqaluit, Canada",1,"Iqaluit, Canada",gazetteer_lhs
+"Legislative Assembly of Nunavut Iqaluit, Canada",1,"Legislative Assembly of Nunavut Iqaluit, Canada",gazetteer_lhs
+"Renton, Washington",1,"Renton, Washington",gazetteer_lhs
+"Ashgabat, Turkmenistan",1,"Ashgabat, Turkmenistan",gazetteer_lhs
+"Hafr al Batin, Saudi Arabia",1,"Hafr al Batin, Saudi Arabia",gazetteer_lhs
+"Oxford, United Kingdom",1,"Oxford, United Kingdom",gazetteer_lhs
+"Ilulissat, Greenland",1,"Ilulissat, Greenland",gazetteer_lhs
+"Sterling, Virginia",1,"Sterling, Virginia",gazetteer_lhs
+"Bankova Kyiv, Ukraine",1,"Bankova Kyiv, Ukraine",gazetteer_lhs
+"Sokoto, Nigeria",1,"Sokoto, Nigeria",gazetteer_lhs
+"Tipperary, Ireland",1,"Tipperary, Ireland",gazetteer_lhs
+"Welington, New Zealand",1,"Welington, New Zealand",gazetteer_lhs
+"Agana, Guam",1,"Agana, Guam",gazetteer_lhs
+"Andorra la Vella, Andorra",1,"Andorra la Vella, Andorra",gazetteer_lhs
+"Bagram Airfield, Afghanistan",1,"Bagram Airfield, Afghanistan",gazetteer_lhs
+"Naypyidaw, Burma",1,"Naypyidaw, Burma",gazetteer_lhs
+"Monaco, Monaco",1,"Monaco, Monaco",gazetteer_lhs
+"Djibouti City, Djibouti",1,"Djibouti City, Djibouti",gazetteer_lhs
+"N'Djamena, Chad",1,"N'Djamena, Chad",gazetteer_lhs
+"Hudaydah, Yemen",1,"Hudaydah, Yemen",gazetteer_lhs
+"Oxon Hill, Maryland",1,"Oxon Hill, Maryland",gazetteer_lhs
+"San Antonio, Texas",1,"San Antonio, Texas",gazetteer_lhs
+"Topeka, Kansas",1,"Topeka, Kansas",gazetteer_lhs
+"Carlisle, Pennsylvania",1,"Carlisle, Pennsylvania",gazetteer_lhs
+"Bellinzona, Switzerland",1,"Bellinzona, Switzerland",gazetteer_lhs
+"Pohnpei, Micronesia",1,"Pohnpei, Micronesia",gazetteer_lhs
+"Podgorica, Montenegro",1,"Podgorica, Montenegro",gazetteer_lhs
+"Charleston, South Carolina",1,"Charleston, South Carolina",gazetteer_lhs
+"Lajes, Portugal",1,"Lajes, Portugal",gazetteer_lhs
+"Bushnell, Florida",1,"Bushnell, Florida",gazetteer_lhs
+"Minsk, Belarus",1,"Minsk, Belarus",gazetteer_lhs
+"Conakry, Guinea",1,"Conakry, Guinea",gazetteer_lhs
+"Pilsen, Czech Republic",1,"Pilsen, Czech Republic",gazetteer_lhs
+"Boa Vista, Brazil",1,"Boa Vista, Brazil",gazetteer_lhs
+"Thessaloniki, Greece",1,"Thessaloniki, Greece",gazetteer_lhs
+"Prince George's County, Maryland",1,"Prince George's County, Maryland",gazetteer_lhs
+"Malé, Maldives",1,"Male, Maldives",gazetteer_lhs
+"Kangerlussuaq, Greenland",1,"Kangerlussuaq, Greenland",gazetteer_lhs
+"Ramstein Airbase, Germany",1,"Ramstein Airbase, Germany",gazetteer_lhs
+"Alexandria, Virginia",1,"Alexandria, Virginia",gazetteer_lhs
+"Suva, Fiji",1,"Suva, Fiji",gazetteer_lhs
+"Denarau Island, Fiji",1,"Denarau Island, Fiji",gazetteer_lhs
+"Sde Boker, Israel",1,"Sde Boker, Israel",gazetteer_lhs
+"Schloss Elmau, Germany",1,"Schloss Elmau, Germany",gazetteer_lhs
+"McLean, Virginia",1,"McLean, Virginia",gazetteer_lhs
+"UN Headquarters New York, New York",1,"UN Headquarters New York, New York",gazetteer_lhs
+"Munster, Germany",1,"Münster, Germany",gazetteer_lhs
+"Dier Dibwan, West Bank",1,"Dier Dibwan, West Bank",gazetteer_lhs
+"Nakolo, Tonga",1,"Nakolo, Tonga",gazetteer_lhs
+"Yahidne, Ukraine",1,"Yahidne, Ukraine",gazetteer_lhs
+"Ashdod, Israel",1,"Ashdod, Israel",gazetteer_lhs
+"Tuscon, Arizona",1,"Tuscon, Arizona",gazetteer_lhs
+"Sedona, Arizona",1,"Sedona, Arizona",gazetteer_lhs
+"Sweimeh, Jordan",1,"Sweimeh, Jordan",gazetteer_lhs
+"Savelletri di Fasano, Italy",1,"Savelletri di Fasano, Italy",gazetteer_lhs
+"San José, Costa Rica",1,"San Jose, Costa Rica",gazetteer_lhs
+"Charlevoix, Canada",1,"Charlevoix, Canada",gazetteer_lhs
+"Hamilton, Canada",1,"Hamilton, Canada",gazetteer_lhs
+"Jaipur, India",1,"Jaipur, India",gazetteer_lhs
+"Ankara, Türkiye",1,"Ankara, Türkiye",gazetteer_lhs
+"Robert F. Kennedy, Secretary of Health and Human Services",1,,person_rejected

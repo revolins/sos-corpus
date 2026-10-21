@@ -2,27 +2,89 @@ name: Rubio Corpus Update
 
 on:
   schedule:
-    - cron: '0 6 * * 1'   # every Monday 06:00 UTC
+    - cron: '0 6 * * 1'     # every Monday 06:00 UTC: incremental update
+    # No scheduled full rescan (decided 2026-10-21: weekly-only, lowest load on
+    # state.gov). Items listed late or below the floor (audit D-04) are caught by
+    # dispatching with full_rescan=true, or via the ground-truth crawl +
+    # data/rubio_supplemental_urls.txt.
   workflow_dispatch:        # allow manual trigger from GitHub UI
     inputs:
       full_rescan:
         description: 'Walk the whole archive instead of only what is new (slow; use after a normalization change or to re-add quarantined rows)'
         type: boolean
         default: false
+      supplemental:
+        description: 'Supplemental only: fetch data/rubio_supplemental_urls.txt + pending + held URLs, no archive/sitemap walk'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Dry run: scrape and merge, but no release, no Hugging Face, no state upload, no issues; outputs go to a workflow artifact'
+        type: boolean
+        default: false
+
+# Concurrency is set on the `update` job below, shared with
+# rubio-ground-truth.yml, so two crawls never hit state.gov at once.
 
 jobs:
-  update:
+  plan:
     runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.mode.outputs.run }}
+      full_rescan: ${{ steps.mode.outputs.full_rescan }}
+    steps:
+      - name: Decide run mode
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHED: ${{ github.event.schedule }}
+          FULL_INPUT: ${{ github.event.inputs.full_rescan }}
+        run: |
+          RUN=true
+          FULL=${FULL_INPUT:-false}
+          # Scheduled runs are always incremental; a full rescan is manual only.
+          if [ "$EVENT" = "schedule" ]; then FULL=false; fi
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+          echo "full_rescan=$FULL" >> "$GITHUB_OUTPUT"
+          echo "event=$EVENT schedule='$SCHED' -> run=$RUN full_rescan=$FULL"
+
+  update:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    # Shared with rubio-ground-truth.yml, so two crawls never hit state.gov at
+    # once. cancel-in-progress: false never cancels the RUNNING crawl, but
+    # GitHub keeps only ONE pending run per group: a newer queued run replaces
+    # (cancels) an older pending one. A skipped job never joins the group.
+    concurrency:
+      group: state-gov-crawl
+      cancel-in-progress: false
     # A healthy run takes ~5 min. state.gov outages have stretched discovery
-    # to 26 min (2026-10-12); past this, something is wrong -- fail and let
-    # next week's --since buffer re-cover the window.
-    timeout-minutes: 45
+    # to 26 min (2026-10-12), and a manual full rescan walks ~80 listing
+    # pages plus the release sitemaps; past this, something is wrong -- fail
+    # and let the pending queue / discovery floor re-cover the window.
+    timeout-minutes: 60
     permissions:
-      contents: write       # needed to create GitHub Releases
+      contents: write       # needed to create GitHub Releases and upload state assets
+      issues: write         # stuck-pending / held-rows issues
+    env:
+      FULL_RESCAN: ${{ needs.plan.outputs.full_rescan }}
+      SUPPLEMENTAL: ${{ github.event.inputs.supplemental || 'false' }}
+      DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # Both seed files are checked in (.gitignore re-includes them under data/*).
+      # Fail here, not after a green run that silently fetched nothing extra.
+      - name: Check checked-in coverage inputs
+        run: |
+          for f in data/rubio_supplemental_urls.txt data/rubio_coverage_exclusions.csv; do
+            if [ ! -s "$f" ]; then
+              echo "::error title=Rubio seed file missing::$f is not in the checkout (gitignored or deleted?)"
+              exit 1
+            fi
+          done
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -67,22 +129,96 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Run-to-run state lives as assets on the latest release (plan steps 4-6):
+      #   rubio_pending.csv           fetch failures, re-fetched every run (F-01)
+      #   rubio_held.csv              rows held by the per-row verifier gate (M-03)
+      #   rubio_discovery_state.json  last_complete_floor + sitemap decisions (D-04)
+      # Absent on the first run after this change; absent at any other time
+      # means the queue was lost, so it is a loud warning, not a silent default.
+      - name: Download pipeline state
+        run: |
+          for f in rubio_pending.csv rubio_held.csv rubio_discovery_state.json; do
+            if gh release download --pattern "$f" --dir data/ --clobber; then
+              echo "Restored $f from the latest release."
+            else
+              echo "::warning title=Rubio state asset missing::$f is not on the latest release -- starting it empty. Expected ONLY on the first run after the 2026-10 coverage change; otherwise pending fetches, held rows or the discovery floor were lost."
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Coverage harness input (plan step 8): ground_truth.csv from the newest
+      # gt-YYYY.MM.DD prerelease cut by rubio-ground-truth.yml. Optional -- until a
+      # ground-truth crawl has published one, the item-level checks just skip.
+      - name: Download newest ground truth (gt-* prerelease)
+        run: |
+          GT_TAG=$(gh release list --limit 100 --json tagName,createdAt \
+                     -q '[.[] | select(.tagName | startswith("gt-"))] | sort_by(.createdAt) | last | .tagName // empty' \
+                   || true)
+          if [ -n "$GT_TAG" ] && gh release download "$GT_TAG" --pattern ground_truth.csv --dir data/gt --clobber; then
+            mv data/gt/ground_truth.csv data/rubio_ground_truth.csv
+            echo "Ground truth: $GT_TAG ($(( $(wc -l < data/rubio_ground_truth.csv) - 1 )) rows)."
+          else
+            echo "No gt-* ground-truth prerelease found; coverage item checks (AC) will skip."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # In-scope ground-truth items the corpus lacks are handed to the scraper as
+      # supplemental URLs (audit §5b AC: "auto-added to the pending queue first"),
+      # so a fetch failure lands them in rubio_pending.csv and AC fails only for an
+      # item still missing after two runs. Items only; report, never fail here.
+      - name: Reconcile corpus against ground truth (pre-scrape)
+        if: hashFiles('data/rubio_ground_truth.csv') != ''
+        run: |
+          ARGS=(--corpus data/corpus.csv
+                --ground-truth data/rubio_ground_truth.csv
+                --exclusions data/rubio_coverage_exclusions.csv
+                --items-only
+                --missing-urls-out data/rubio_gt_missing.txt
+                --out data/coverage_pre)
+          if [ -f data/rubio_pending.csv ]; then ARGS+=(--pending data/rubio_pending.csv); fi
+          if [ -f data/rubio_held.csv ]; then ARGS+=(--held data/rubio_held.csv); fi
+          python scripts/rubio_coverage_reconcile.py "${ARGS[@]}" \
+            || echo "::warning title=Rubio coverage::in-scope ground-truth items missing before this run's scrape; they are passed to the scraper via data/rubio_gt_missing.txt"
+
       # Resolve the discovery floor with the scraper's own logic rather than
-      # re-deriving it in YAML -- it already reads the corpus and knows the
-      # latest stored date for the secretary.
+      # re-deriving it in YAML -- it reads the corpus and the discovery state.
+      # Logged only; the scrape step resolves the same floor itself.
       - name: Compute incremental scrape cutoff
         id: cutoff
         run: |
           python scripts/rubio_backfill.py \
             --enriched data/corpus.csv \
+            --discovery-state data/rubio_discovery_state.json \
             --print-since
 
+      # A DiscoveryError (archive index unreachable, an in-window listing page
+      # unreadable, or the listing markup changed) exits non-zero HERE: the job
+      # fails instead of reporting "no new speeches" (2026-10-12 lesson). The
+      # supplemental list is passed every run; URLs already in the corpus are
+      # deduplicated before any fetch.
       - name: Discover and fetch new Rubio speeches
+        id: scrape
         run: |
-          python scripts/rubio_backfill.py \
-            --enriched data/corpus.csv \
-            --output   data/rubio_new.csv \
-            ${{ github.event.inputs.full_rescan == 'true' && '--full-rescan' || format('--since {0}', steps.cutoff.outputs.since) }}
+          ARGS=(--enriched data/corpus.csv
+                --output   data/rubio_new.csv
+                --pending  data/rubio_pending.csv
+                --discovery-state data/rubio_discovery_state.json
+                --exclusions data/rubio_coverage_exclusions.csv
+                --urls     data/rubio_supplemental_urls.txt)
+          if [ -f data/rubio_held.csv ]; then
+            ARGS+=(--urls data/rubio_held.csv)
+          fi
+          if [ -f data/rubio_gt_missing.txt ]; then
+            ARGS+=(--urls data/rubio_gt_missing.txt)
+          fi
+          if [ "$SUPPLEMENTAL" = "true" ]; then
+            ARGS+=(--supplemental-only)
+          elif [ "$FULL_RESCAN" = "true" ]; then
+            ARGS+=(--full-rescan)
+          fi
+          python scripts/rubio_backfill.py "${ARGS[@]}"
 
       - name: Count new rows
         id: check
@@ -102,41 +238,97 @@ jobs:
           echo "Found $NEW new Rubio rows."
 
       - name: Merge, clean, and verify
+        id: merge
         if: steps.check.outputs.new_rows != '0'
         run: |
           python scripts/corpus_rubio_update.py \
             --corpus   data/corpus.csv \
             --backfill data/rubio_new.csv \
             --output   data/corpus_updated.csv \
+            --held-out data/rubio_held.csv \
+            --held-flag data/rubio_held.flag \
             --max-gap-days 90
 
       - name: Check merge output
         id: merge_check
         if: steps.check.outputs.new_rows != '0'
+        env:
+          SCRAPED: ${{ steps.check.outputs.new_rows }}
+          HELD: ${{ steps.merge.outputs.held }}
         run: |
           # The scraper's "new rows" count is an upper bound, not a decision.
           # corpus_rubio_update.py re-runs dedup with rename-proof keys and
-          # ALSO quarantines any row whose Location cannot be normalized, so
-          # it can legitimately end up with nothing to merge — in which case
-          # it exits 0 without writing output. Gate downstream steps on
-          # whether a merged file actually exists, not on the scraper's count.
-          #
-          # If the scraper reports many new rows and this finds none, read the
-          # merge log: a large "slug+date" rejection tally means state.gov has
-          # renamed a path segment (that is what happened on 2026-09-21, when
-          # 609 already-collected speeches came back looking brand new).
+          # holds any row that fails a row-local verifier check (or has no
+          # date), so it can legitimately end up with nothing to merge — in
+          # which case it exits 0 without writing output. Gate downstream
+          # steps on whether a merged file actually exists, not on the
+          # scraper's count. (Location no longer drops rows: unresolvable ones
+          # merge with a provisional Location, see rubio_merge_provenance.csv.)
           if [ -f data/corpus_updated.csv ]; then
             OLD=$(python -c "import csv; csv.field_size_limit(10**8); print(sum(1 for _ in csv.DictReader(open('data/corpus.csv', encoding='utf-8'))))")
             NEW_TOTAL=$(python -c "import csv; csv.field_size_limit(10**8); print(sum(1 for _ in csv.DictReader(open('data/corpus_updated.csv', encoding='utf-8'))))")
             echo "merged=true" >> "$GITHUB_OUTPUT"
             echo "actual_new=$((NEW_TOTAL - OLD))" >> "$GITHUB_OUTPUT"
           else
+            HELD=${HELD:-0}
+            DEDUP=$(( SCRAPED - HELD ))
+            [ "$DEDUP" -lt 0 ] && DEDUP=0
             echo "merged=false" >> "$GITHUB_OUTPUT"
-            echo "Scraper found candidate URLs not already in the corpus by its own canonicalization, but corpus_rubio_update.py's stricter URL dedup determined none were genuinely new (likely a www./case-only difference). Nothing to publish."
+            echo "Nothing merged. The scraper wrote ${SCRAPED} row(s):"
+            echo "  held:     ${HELD} (failed a row-local verifier check or undated -- retried next run; see data/rubio_held.csv in the rubio-update-audit artifact)"
+            echo "  rejected: ${DEDUP} as already in the corpus by corpus_rubio_update.py's dedup keys (url / canonical-url / slug+date / within-backfill -- the tally is in the merge log above)."
+            echo "If the slug+date or canonical-url tally is large, state.gov has renamed a path segment (2026-09-21: 609 speeches came back looking new); add it to PATH_RENAMES in scripts/corpus_keys.py."
           fi
 
-      # Without this the sidecars die with the runner, and quarantining a row
-      # instead of fabricating a Location would be an invisible drop.
+      # Coverage harness (plan step 8): reconciler + verifier checks AC-AI on the
+      # corpus this run would release (the merged file, else the unchanged one).
+      # REPORT-ONLY until plan step 10 enforces AC-AI: continue-on-error, and the
+      # reconciler runs --legacy-warn-only because v2026.10.19's rows predate the
+      # extraction fix. Results ride in the rubio-update-audit artifact.
+      - name: Coverage report (reconciler + verifier AC-AI)
+        if: steps.scrape.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mkdir -p data/coverage
+          CORPUS=data/corpus.csv
+          if [ -f data/corpus_updated.csv ]; then CORPUS=data/corpus_updated.csv; fi
+          RARGS=(--corpus "$CORPUS" --exclusions data/rubio_coverage_exclusions.csv
+                 --legacy-warn-only --out data/coverage)
+          VARGS=(--input "$CORPUS" --max-gap-days 90 --rubio-coverage
+                 --exclusions data/rubio_coverage_exclusions.csv)
+          if [ "$CORPUS" = data/corpus_updated.csv ]; then
+            VARGS+=(--baseline data/corpus.csv)
+          fi
+          if [ -f data/rubio_ground_truth.csv ]; then
+            RARGS+=(--ground-truth data/rubio_ground_truth.csv)
+            VARGS+=(--ground-truth data/rubio_ground_truth.csv)
+          fi
+          for kv in pending:rubio_pending.csv held:rubio_held.csv; do
+            if [ -f "data/${kv#*:}" ]; then
+              RARGS+=("--${kv%%:*}" "data/${kv#*:}")
+              VARGS+=("--${kv%%:*}" "data/${kv#*:}")
+            fi
+          done
+          if [ -f data/rubio_listing_snapshot.csv ]; then
+            RARGS+=(--listing-snapshot data/rubio_listing_snapshot.csv)
+            VARGS+=(--listing-snapshot data/rubio_listing_snapshot.csv)
+            if [ -f data/rubio_discovery_state.json ]; then
+              VARGS+=(--discovery-state data/rubio_discovery_state.json)
+            fi
+          fi
+          RC=0
+          python scripts/rubio_coverage_reconcile.py "${RARGS[@]}" || RC=1
+          python scripts/corpus_verify_research_grade.py "${VARGS[@]}" \
+            | tee data/coverage/verify_coverage.txt || RC=1
+          if [ -f data/coverage/coverage_report.md ]; then
+            cat data/coverage/coverage_report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit $RC
+
+      # Without this the sidecars die with the runner, and a skipped or held
+      # page would be an invisible drop (audit C-03: the Cuban video message
+      # sat in stderr-only "[skip]" lines for 8 weeks).
       - name: Upload audit sidecars
         if: always()
         uses: actions/upload-artifact@v4
@@ -145,14 +337,47 @@ jobs:
           if-no-files-found: ignore
           retention-days: 90
           path: |
+            data/rubio_skipped.csv
+            data/rubio_listing_snapshot.csv
+            data/rubio_backfill_summary.json
+            data/rubio_pending.csv
+            data/rubio_stuck.csv
+            data/rubio_discovery_state.json
+            data/rubio_held.csv
+            data/rubio_merge_provenance.csv
             data/rubio_unresolved_location.csv
             data/rubio_update_people_mention_audit.csv
             data/rubio_update_unresolved_gpe_audit.csv
+            data/rubio_ground_truth.csv
+            data/rubio_gt_missing.txt
+            data/coverage_pre/
+            data/coverage/
+
+      # Dry run: the scraped rows (and the merge manifest) instead of a release.
+      - name: Upload dry-run outputs
+        if: always() && env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rubio-update-dry-run
+          if-no-files-found: ignore
+          retention-days: 30
+          path: |
+            data/rubio_new.csv
+            data/corpus_updated.csv.manifest.json
 
       - name: Release tag
         id: tag
-        if: steps.merge_check.outputs.merged == 'true'
-        run: echo "tag=v$(date -u +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+        if: steps.merge_check.outputs.merged == 'true' && env.DRY_RUN != 'true'
+        run: |
+          TAG="v$(date -u +%Y.%m.%d)"
+          # Same-day re-run (manual dispatch after the cron): never collide.
+          N=1
+          while gh release view "$TAG" >/dev/null 2>&1; do
+            TAG="v$(date -u +%Y.%m.%d).$N"; N=$((N + 1))
+          done
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Codebook PDF: fixed wording from docs/codebook/codebook_template.tex,
       # statistics recomputed from this release's CSV. Best-effort -- a LaTeX
@@ -160,7 +385,7 @@ jobs:
       # step attaches the PDF only if it was built. LaTeX comes from Ubuntu's
       # own packages; build_codebook.py compiles with pdflatex.
       - name: Build codebook
-        if: steps.merge_check.outputs.merged == 'true'
+        if: steps.merge_check.outputs.merged == 'true' && env.DRY_RUN != 'true'
         continue-on-error: true
         run: |
           sudo apt-get update -qq
@@ -173,19 +398,32 @@ jobs:
             --out     "data/codebook_${{ steps.tag.outputs.tag }}.pdf"
 
       - name: Publish new release (GitHub)
-        if: steps.merge_check.outputs.merged == 'true'
+        if: steps.merge_check.outputs.merged == 'true' && env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          NEW: ${{ steps.merge_check.outputs.actual_new }}
+          HELD: ${{ steps.merge.outputs.held }}
+          PENDING: ${{ steps.scrape.outputs.pending }}
+          SKIPPED: ${{ steps.scrape.outputs.skipped }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          NEW="${{ steps.merge_check.outputs.actual_new }}"
-          QUARANTINED=0
-          if [ -f data/rubio_unresolved_location.csv ]; then
-            QUARANTINED=$(( $(wc -l < data/rubio_unresolved_location.csv) - 1 ))
-            [ "$QUARANTINED" -lt 0 ] && QUARANTINED=0
+          # Count only rows actually merged with a provisional Location: the
+          # provenance sidecar lists merged rows only (held ones are not in it).
+          PROVISIONAL=0
+          if [ -f data/rubio_merge_provenance.csv ]; then
+            PROVISIONAL=$(python -c "import csv,sys; print(sum(r.get('Location Provisional') == '1' for r in csv.DictReader(open(sys.argv[1], newline='', encoding='utf-8'))))" data/rubio_merge_provenance.csv)
           fi
           NOTES="Automated weekly update: ${NEW} new Rubio speeches added and verified."
-          if [ "$QUARANTINED" -gt 0 ]; then
-            NOTES="${NOTES} ${QUARANTINED} row(s) quarantined for an unresolvable Location and NOT included — see the rubio-update-audit artifact on this run."
+          if [ "$PROVISIONAL" -gt 0 ]; then
+            NOTES="${NOTES} ${PROVISIONAL} row(s) merged with a provisional Location (Location Provisional = 1 in rubio_merge_provenance.csv, rubio-update-audit artifact)."
           fi
+          if [ "${HELD:-0}" -gt 0 ]; then
+            NOTES="${NOTES} ${HELD} row(s) HELD by the per-row verifier gate and not included; they are retried next run (rubio_held.csv)."
+          fi
+          if [ "${PENDING:-0}" -gt 0 ]; then
+            NOTES="${NOTES} ${PENDING} URL(s) could not be fetched and are queued for retry (rubio_pending.csv)."
+          fi
+          NOTES="${NOTES} Pages skipped by classification/dedup this run: ${SKIPPED:-0} (rubio_skipped.csv in the rubio-update-audit artifact)."
           # gh release create's `file#label` syntax only sets a cosmetic display
           # label — it does NOT rename the uploaded asset. The actual asset
           # filename must match corpus_v*.csv (what the next run's `gh release
@@ -197,15 +435,17 @@ jobs:
           else
             NOTES="${NOTES} Codebook PDF not attached (build failed; see the Build codebook step)."
           fi
+          # Run-to-run state rides on the release the next run downloads.
+          for f in rubio_pending.csv rubio_held.csv rubio_discovery_state.json; do
+            [ -f "data/$f" ] && ASSETS+=("data/$f")
+          done
           gh release create "$TAG" \
             "${ASSETS[@]}" \
             --title "SOS Corpus ${TAG} (${NEW} new Rubio rows)" \
             --notes "${NOTES}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to Hugging Face Hub
-        if: steps.merge_check.outputs.merged == 'true'
+        if: steps.merge_check.outputs.merged == 'true' && env.DRY_RUN != 'true'
         run: |
           # No pip install here: huggingface_hub/pandas/pyarrow are in
           # scripts/requirements.txt so they resolve against the rest of the
@@ -217,6 +457,54 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
+      # No new release this run: the state still changed (pending attempts,
+      # floor, held list), so overwrite it on the latest release. Only on
+      # success -- after a failed merge the previous state is the safe one.
+      - name: Persist pipeline state (no new release)
+        if: success() && env.DRY_RUN != 'true' && steps.merge_check.outputs.merged != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST=$(gh release view --json tagName -q .tagName)
+          FILES=()
+          for f in rubio_pending.csv rubio_held.csv rubio_discovery_state.json; do
+            [ -f "data/$f" ] && FILES+=("data/$f")
+          done
+          if [ "${#FILES[@]}" -gt 0 ]; then
+            gh release upload "$LATEST" "${FILES[@]}" --clobber
+            echo "Updated ${FILES[*]} on release $LATEST."
+          fi
+
+      # One open issue per problem, updated with a comment each run rather
+      # than a new issue per week.
+      - name: Open or update issues (stuck pending / held rows)
+        if: always() && env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # Issue bodies are capped at 65,536 characters; the CSVs are trimmed below.
+          open_or_update() {
+            local title="$1" body="$2" num
+            num=$(gh issue list --state open --search "\"$title\" in:title" \
+                    --json number,title -q ".[] | select(.title == \"$title\") | .number" | head -n 1)
+            if [ -n "$num" ]; then
+              gh issue comment "$num" --body-file "$body"
+            else
+              gh issue create --title "$title" --body-file "$body"
+            fi
+          }
+          if [ -f data/rubio_stuck.csv ]; then
+            { echo "URLs that have failed to fetch in 3 or more weekly runs (data/rubio_pending.csv). Run: $RUN_URL"
+              echo; echo '```'; head -c 60000 data/rubio_stuck.csv; echo '```'; } > stuck_body.md
+            open_or_update "Rubio update: stuck pending URLs" stuck_body.md
+          fi
+          if [ -f data/rubio_held.flag ] && [ -f data/rubio_held.csv ]; then
+            { echo "New Rubio rows held by the per-row verifier gate (not released; retried each run). Run: $RUN_URL"
+              echo; echo '```'; cut -c1-400 data/rubio_held.csv | head -c 60000; echo '```'; } > held_body.md
+            open_or_update "Rubio update: held rows" held_body.md
+          fi
+
       - name: No new speeches found
         if: steps.check.outputs.new_rows == '0' || steps.merge_check.outputs.merged == 'false'
-        run: echo "No new Rubio speeches found this week — corpus unchanged."
+        run: echo "No new Rubio speeches merged this week — corpus unchanged (see the Check merge output step for held vs duplicate counts, and rubio_skipped.csv for pages classified out)."

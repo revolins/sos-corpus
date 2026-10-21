@@ -10,7 +10,7 @@ import json
 import re
 import sys
 from collections import Counter, defaultdict
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 # Check W needs the canonical country-name set to check "Countries
@@ -32,6 +32,21 @@ except BaseException:
     # the verifier entirely over an optional cross-check. This import must
     # never be allowed to take verify.py down with it.
     _ISO3_BY_CANONICAL_NAME = None
+
+# Checks AC-AI (Rubio coverage, audit §5b) share their matching and scoring with
+# rubio_coverage_reconcile.py so the verifier and the harness can never disagree
+# about what "present" or "recall" means. That module imports only stdlib +
+# corpus_keys + rubio_turns at load time; its scoring helpers (rubio_backfill ->
+# requests/bs4/ftfy) load lazily, only when --rubio-coverage asks for AD-AG. All
+# of AC-AI are opt-in: with none of their flags given they print "skip" lines and
+# every existing invocation behaves exactly as before.
+try:
+    import rubio_coverage_reconcile as _rcr  # type: ignore[import]
+except BaseException as _rcr_err:  # same reasoning as the import above
+    _rcr = None
+    _RCR_IMPORT_ERROR = f'{type(_rcr_err).__name__}: {_rcr_err}'
+else:
+    _RCR_IMPORT_ERROR = ''
 
 csv.field_size_limit(10 ** 8)
 
@@ -188,6 +203,36 @@ def main() -> None:
                           'Check Q then accepts a baseline difference in exactly those '
                           '(Row Id, field) pairs -- and only in SOS Text / Natural Text -- '
                           'and still fails on any other difference.')
+    # ── Rubio coverage checks AC-AI (all opt-in; see the block before the date-gap check)
+    ap.add_argument('--rubio-coverage', action='store_true',
+                     help='Run the Rubio row checks AD (turn recall), AE (foreign leak / inline '
+                          'labels), AF (byline), AG (mid-word start / nav tail). FAIL for new or '
+                          'changed Rubio rows (every row when no --baseline is given), WARN for '
+                          'rows unchanged since --baseline.')
+    ap.add_argument('--strict-rubio-coverage', action='store_true',
+                     help='Like --rubio-coverage, but unchanged legacy rows FAIL too.')
+    ap.add_argument('--coverage-allowlist', default=None,
+                     help='CSV row_id,url,reason,expires: an AC-AG failure on a listed row/URL '
+                          'is a warning until the expiry date.')
+    ap.add_argument('--ground-truth', default=None,
+                     help='ground_truth.csv (rubio_ground_truth.py). Enables Check AC.')
+    ap.add_argument('--exclusions', default=None,
+                     help='Rubio coverage exclusions CSV for AC/AH '
+                          '(default: data/rubio_coverage_exclusions.csv next to scripts/).')
+    ap.add_argument('--pending', default=None,
+                     help='rubio_pending.csv: AC grace, AH accounted-for, AI age. Enables AI.')
+    ap.add_argument('--held', default=None,
+                     help='rubio_held.csv: AC grace, AH accounted-for, AI age. Enables AI.')
+    ap.add_argument('--listing-snapshot', default=None,
+                     help='rubio_listing_snapshot.csv. Enables Check AH.')
+    ap.add_argument('--discovery-state', default=None,
+                     help='rubio_discovery_state.json: AH only checks hrefs listed on or after '
+                          'its last_run.since (all snapshot rows when absent).')
+    ap.add_argument('--gt-grace-days', type=int, default=7,
+                     help='AC: a missing item first seen within this many days of the corpus '
+                          'max Date is a warning (default %(default)s).')
+    ap.add_argument('--as-of', default=None,
+                     help='AI/allowlist reference date, YYYY-MM-DD (default: today UTC).')
     args = ap.parse_args()
 
     with open(args.input, newline='', encoding='utf-8') as f:
@@ -995,6 +1040,206 @@ def main() -> None:
         fail(f'Check AB: "ã——" separator mojibake in text: {len(ab_bad)} field(s), sample {ab_bad[:5]}')
     else:
         ok('Check AB: no "ã——" separator mojibake in SOS/Natural Text')
+
+    # ── Checks AC-AI — Rubio coverage (docs/rubio_coverage_audit.md §5b) ────────
+    # Every one is opt-in and prints a "skip" line when its input is absent, so a
+    # plain `--input X` run (and corpus_rubio_update.py's two invocations) is
+    # unchanged. Matching (URL key with the spokesperson->spokesman fold, or
+    # (slug, Date); never the slug alone) and scoring are rubio_coverage_reconcile's.
+    _rubio_rows = [r for r in rows if (r.get('Secretary') or '') == 'Rubio']
+    _cov_today = date.fromisoformat(args.as_of) if args.as_of else datetime.now(timezone.utc).date()
+    _cov_allow = None
+    _cov_index = None
+    _cov_any = (args.rubio_coverage or args.strict_rubio_coverage or args.ground_truth
+                or args.listing_snapshot or args.pending or args.held)
+    if _cov_any and _rcr is None:
+        fail(f'Checks AC-AI: rubio_coverage_reconcile.py not importable ({_RCR_IMPORT_ERROR})')
+    elif _cov_any:
+        _cov_allow = _rcr.Allowlist(args.coverage_allowlist, today=_cov_today)
+        _cov_index = _rcr.CorpusIndex(_rubio_rows)
+        if _cov_allow.expired:
+            print(f'  warn  Checks AC-AG: {len(_cov_allow.expired)} expired --coverage-allowlist '
+                  f'entr(y/ies) no longer downgrade — {[e.get("row_id") or e.get("url") for e in _cov_allow.expired[:5]]}')
+    _cov_excl_path = args.exclusions or str(Path(__file__).resolve().parent.parent / 'data'
+                                            / 'rubio_coverage_exclusions.csv')
+    if _cov_any and not Path(_cov_excl_path).exists():
+        print(f'  warn  Checks AC/AH: exclusions file {_cov_excl_path} not found -- '
+              f'decided out-of-scope items will read as missing')
+
+    # Check AC — ground-truth membership. In-scope GT items (event date on or after
+    # 2025-01-21) must be in the corpus or on the exclusion list. Grace (warn, not
+    # fail): first seen within --gt-grace-days of the corpus max Date, or still in
+    # rubio_pending.csv / rubio_held.csv with < 2 attempts -- the weekly job feeds
+    # missing items to the scraper, so FAIL means "still missing after two runs".
+    if not args.ground_truth:
+        print('  skip  Check AC: no --ground-truth given, ground-truth membership not checked')
+    elif _cov_index is not None:
+        if not Path(args.ground_truth).exists():
+            fail(f'Check AC: --ground-truth {args.ground_truth} does not exist')
+        else:
+            with open(args.ground_truth, newline='', encoding='utf-8') as f:
+                gt_rows = list(csv.DictReader(f))
+            items = _rcr.reconcile_items(
+                gt_rows, _cov_index, _rcr.load_exclusions(_cov_excl_path),
+                _rcr.load_queue(args.pending, 'first_seen'), _rcr.load_queue(args.held, 'first_held'),
+                _cov_allow, grace_days=args.gt_grace_days)
+            st = Counter(i['status'] for i in items)
+            ac_fail = _rcr.item_failures(items)
+            ac_grace = [i for i in items if i['status'] == 'missing' and (i['grace'] or i['allowlisted'])]
+            if ac_fail:
+                fail(f'Check AC: {len(ac_fail)} in-scope ground-truth item(s) missing from the corpus '
+                     f'(not excluded, not in grace): {[i["canonical_url"] for i in ac_fail[:20]]}')
+            else:
+                ok(f'Check AC: every in-scope ground-truth item present or excluded '
+                   f'({st["present"]} present, {st["excluded"]} excluded, {st["out_of_scope"]} out of scope)')
+            if ac_grace:
+                print(f'  warn  Check AC: {len(ac_grace)} missing item(s) in grace (queued / newly seen / '
+                      f'allowlisted) — {[(i["canonical_url"], i["note"] or i["allowlisted"]) for i in ac_grace[:10]]}')
+            if st['unknown']:
+                print(f'  warn  Check AC: {st["unknown"]} ground-truth item(s) with undecided in_scope '
+                      f'(fetch_error / unprobed) not in the corpus')
+            oos_in = [i['corpus_row_id'] for i in items if i['status'] == 'out_of_scope' and i['corpus_row_id']]
+            if oos_in:
+                print(f'  warn  Check AC: {len(oos_in)} corpus row(s) are out-of-scope ground-truth items '
+                      f'(precision) — {oos_in[:10]}')
+
+    # Checks AD-AG — row-level Rubio coverage on every Rubio row. A row is legacy
+    # when --baseline holds the same URL with the same SOS Text; legacy failures
+    # WARN until --strict-rubio-coverage (the v2026.10.2x patch release turns it on).
+    # With no --baseline every row counts as new: that is how the per-row gate in
+    # corpus_rubio_update.py runs the verifier on the freshly scraped rows alone.
+    if not (args.rubio_coverage or args.strict_rubio_coverage):
+        print('  skip  Checks AD-AG: no --rubio-coverage given, Rubio turn recall / leak / '
+              'byline / mid-word checks not run')
+    elif _cov_index is not None:
+        try:
+            _rcr._scoring()
+        except BaseException as e:  # noqa: BLE001 -- requested explicitly, so it must not pass silently
+            fail(f'Checks AD-AG: scoring helpers unavailable ({type(e).__name__}: {e})')
+        else:
+            legacy_sos: dict[str, str] = {}
+            if args.baseline:
+                for b in baseline_rows.values():
+                    if (b.get('Secretary') or '') == 'Rubio':
+                        legacy_sos[_rcr.item_key(b.get('URL', ''))] = b.get('SOS Text', '')
+            buckets = {c: {'new': [], 'legacy': [], 'allow': []} for c in ('AD', 'AE', 'AF', 'AG')}
+            n_legacy = 0
+            for r in _rubio_rows:
+                m = _rcr.row_coverage(r)
+                k = _rcr.item_key(r.get('URL', ''))
+                legacy = k in legacy_sos and legacy_sos[k] == (r.get('SOS Text') or '')
+                n_legacy += legacy
+                hits = {}
+                if m['scored'] == 'turns' and float(m['rubio_recall']) < _rcr.RECALL_MIN:
+                    hits['AD'] = m['rubio_recall']
+                if int(m['foreign_leak_words']) > 0 or m['inline_labels']:
+                    hits['AE'] = f'{m["foreign_leak_words"]}w' + (f' [{m["inline_labels"]}]' if m['inline_labels'] else '')
+                if m['non_rubio_byline']:
+                    hits['AF'] = f'{m["byline_reason"]}: {m["byline"]}'
+                if m['mid_word_start'] or m['nav_tail']:
+                    hits['AG'] = '+'.join(x for x in ('mid_word_start', 'nav_tail') if m[x])
+                if not hits:
+                    continue
+                allowed = _cov_allow.get(r.get('Row Id', ''), r.get('URL', '')) is not None
+                for c, detail in hits.items():
+                    b = 'allow' if allowed else ('legacy' if legacy and not args.strict_rubio_coverage else 'new')
+                    buckets[c][b].append((r.get('Row Id'), detail))
+            scope = (f'{len(_rubio_rows)} Rubio rows, {n_legacy} unchanged since --baseline'
+                     if args.baseline else f'{len(_rubio_rows)} Rubio rows, no --baseline: all treated as new')
+            labels = {
+                'AD': f'Rubio-turn recall < {_rcr.RECALL_MIN}',
+                'AE': 'words from other speakers / inline speaker labels in SOS Text',
+                'AF': 'block byline names neither Rubio nor a joint principal',
+                'AG': 'SOS Text starts mid-word or ends in a "Related ... Notifications" nav tail',
+            }
+            for c in ('AD', 'AE', 'AF', 'AG'):
+                bk = buckets[c]
+                if bk['new']:
+                    fail(f'Check {c}: {labels[c]}: {len(bk["new"])} '
+                         f'{"row(s)" if args.strict_rubio_coverage else "new/changed row(s)"}, sample {bk["new"][:10]}')
+                else:
+                    ok(f'Check {c}: no {"" if args.strict_rubio_coverage else "new/changed "}row with {labels[c]} ({scope})')
+                if bk['legacy']:
+                    print(f'  warn  Check {c}: {labels[c]}: {len(bk["legacy"])} legacy row(s) unchanged since '
+                          f'--baseline (FAIL under --strict-rubio-coverage) — {bk["legacy"][:10]}')
+                if bk['allow']:
+                    print(f'  warn  Check {c}: {labels[c]}: {len(bk["allow"])} allowlisted row(s) — {bk["allow"][:10]}')
+
+    # Check AH — listing reconciliation. Every href the archive walk listed (on or
+    # after the discovery window's since date) must be accounted for: in the
+    # corpus, excluded, pending, or held. A page classified out lands in
+    # rubio_skipped.csv but is NOT accounted for -- that is how the Cuban video
+    # message was lost (C-01); it needs a recorded exclusion.
+    def _iso_day(text: str) -> str:
+        # Snapshots store ISO list dates; older ones kept the listing's raw
+        # 'Month D, YYYY' text, which compared as a string against an ISO
+        # floor never filtered anything. Unparseable -> '' (checked, no window).
+        t = text.strip()
+        if re.match(r'^\d{4}-\d{2}-\d{2}', t):
+            return t[:10]
+        try:
+            return datetime.strptime(t, '%B %d, %Y').date().isoformat()
+        except ValueError:
+            return ''
+
+    if not args.listing_snapshot:
+        print('  skip  Check AH: no --listing-snapshot given, listing reconciliation not run')
+    elif _cov_index is not None:
+        if not Path(args.listing_snapshot).exists():
+            fail(f'Check AH: --listing-snapshot {args.listing_snapshot} does not exist')
+        else:
+            since = ''
+            if args.discovery_state and Path(args.discovery_state).exists():
+                try:
+                    state = json.loads(Path(args.discovery_state).read_text(encoding='utf-8'))
+                    since = ((state.get('last_run') or {}).get('since') or '')[:10]
+                except (OSError, json.JSONDecodeError) as e:
+                    print(f'  warn  Check AH: discovery state unreadable ({e}); checking every listed href')
+            ex_url, ex_sd = _rcr.load_exclusions(_cov_excl_path)
+            queued = set(_rcr.load_queue(args.pending, 'first_seen')) | set(_rcr.load_queue(args.held, 'first_held'))
+            slug_ym = {_rcr.slug_ym_key(r.get('URL', ''), r.get('Date', '')) for r in _rubio_rows} - {''}
+            with open(args.listing_snapshot, newline='', encoding='utf-8') as f:
+                snap = list(csv.DictReader(f))
+            seen_keys, unaccounted = set(), []
+            for s in snap:
+                href = s.get('href') or ''
+                k = _rcr.item_key(href)
+                ld = _iso_day(s.get('list_date') or '')
+                if not k or k in seen_keys or (since and ld and ld < since):
+                    continue
+                seen_keys.add(k)
+                sd = _rcr.slug_date_key(href, ld) if ld else ''
+                rid, _how = _cov_index.match(href, sd)
+                if (rid or k in ex_url or (sd and sd in ex_sd) or k in queued
+                        or (_rcr.slug_ym_key(href) or '') in slug_ym):
+                    continue
+                unaccounted.append(href)
+            if unaccounted:
+                fail(f'Check AH: {len(unaccounted)} listed href(s) not in the corpus, excluded, pending or held '
+                     f'(listed since {since or "the start of the snapshot"}): {unaccounted[:20]}')
+            else:
+                ok(f'Check AH: all {len(seen_keys)} listed href(s) accounted for'
+                   + (f' (listed since {since})' if since else ''))
+
+    # Check AI — queue age. A URL still pending (fetch keeps failing) or held (a
+    # row-local check keeps failing) after 21 days needs a human. Warn only; the
+    # workflow opens the issue.
+    if not (args.pending or args.held):
+        print('  skip  Check AI: no --pending/--held given, queue age not checked')
+    elif _rcr is not None:
+        old = []
+        for path, col, kind in ((args.pending, 'first_seen', 'pending'), (args.held, 'first_held', 'held')):
+            for k, q in _rcr.load_queue(path, col).items():
+                try:
+                    age = (_cov_today - date.fromisoformat(q['since'])).days
+                except ValueError:
+                    continue
+                if age > _rcr.AGE_WARN_DAYS:
+                    old.append((kind, q['url'], age))
+        if old:
+            print(f'  warn  Check AI: {len(old)} pending/held entr(y/ies) older than {_rcr.AGE_WARN_DAYS} days — {old[:10]}')
+        else:
+            ok(f'Check AI: no pending/held entry older than {_rcr.AGE_WARN_DAYS} days')
 
     by_sec: dict[str, list[date]] = defaultdict(list)
     for r in rows:

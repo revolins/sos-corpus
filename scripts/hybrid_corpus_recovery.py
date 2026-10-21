@@ -628,7 +628,38 @@ def secretary_anchor_regex(secretary: str) -> Optional[re.Pattern]:
     return re.compile(rf'(?im)^\s*(?:THE\s+)?SECRETARY(?:\s+OF\s+STATE)?\s+(?:[A-Z.\']+\s+)*{name}\b[:\- ]*')
 
 
-def extract_secretary_only_text(raw_text: str, secretary: str) -> Tuple[str, str]:
+def _trim_nav_tail(chunk: str) -> str:
+    """Cut a chunk at the point where state.gov nav/footer chrome begins.
+
+    Rubio path only (boilerplate_veto=False).  A nav tail starts at an own-line
+    "Tags" / "Back to Top" marker, or at a SHORT line carrying a BOILERPLATE_CUES
+    hit ("Contact Us", "Privacy Policy") when the lines from there on are menu-like
+    (average under 40 characters).  A cue inside a long sentence -- "so people can
+    contact us and register" in row 17415 -- is speech and is kept (audit X-02).
+    """
+    lines = (chunk or '').split('\n')
+    for i, ln in enumerate(lines):
+        s = ln.strip()
+        if s in ('Tags', 'Back to Top'):
+            return '\n'.join(lines[:i])
+        if s and len(s) < 60 and BOILERPLATE_CUES.search(s):
+            tail = [t.strip() for t in lines[i:] if t.strip()]
+            if sum(len(t) for t in tail) / len(tail) < 40:
+                return '\n'.join(lines[:i])
+    return chunk or ''
+
+
+def extract_secretary_only_text(raw_text: str, secretary: str,
+                                boilerplate_veto: bool = True) -> Tuple[str, str]:
+    """Collect the Secretary's anchored turns (or long paragraphs as a fallback).
+
+    boilerplate_veto=True (default, every non-Rubio caller): a chunk or paragraph
+    containing any BOILERPLATE_CUES hit is dropped whole -- the historical
+    behaviour, left bit-identical.  boilerplate_veto=False (Rubio path, audit
+    X-01/X-02): the chunk is trimmed at its nav/footer tail by _trim_nav_tail
+    instead, so a final turn that runs into the footer, or a turn that merely
+    says "contact us", is no longer lost.
+    """
     text = raw_text or ''
     if not text:
         return '', 'empty'
@@ -649,9 +680,14 @@ def extract_secretary_only_text(raw_text: str, secretary: str) -> Tuple[str, str
                 s = UPPER_SPEAKER_LINE_RE.search(text, pos=after)
                 end_candidates = [mm.start() for mm in (q, s) if mm]
                 end = min(end_candidates) if end_candidates else text_len
-                chunk = normalize_whitespace(text[cur.end():end])
-                if chunk and not BOILERPLATE_CUES.search(chunk):
-                    collected.append(chunk)
+                if boilerplate_veto:
+                    chunk = normalize_whitespace(text[cur.end():end])
+                    if chunk and not BOILERPLATE_CUES.search(chunk):
+                        collected.append(chunk)
+                else:
+                    chunk = normalize_whitespace(_trim_nav_tail(text[cur.end():end]))
+                    if chunk:
+                        collected.append(chunk)
                 cursor = max(end, cur.start() + 1)
                 if cursor >= text_len:
                     break
@@ -662,10 +698,12 @@ def extract_secretary_only_text(raw_text: str, secretary: str) -> Tuple[str, str
     # Fallback: keep long natural paragraphs and strip obvious nav boilerplate.
     paragraphs = []
     for block in re.split(r'\n\s*\n+', text):
+        if not boilerplate_veto:
+            block = _trim_nav_tail(block)
         p = normalize_whitespace(block)
         if len(p) < 80:
             continue
-        if BOILERPLATE_CUES.search(p):
+        if boilerplate_veto and BOILERPLATE_CUES.search(p):
             continue
         paragraphs.append(p)
     if not paragraphs:

@@ -170,8 +170,14 @@ def _recover_speaker_text(raw_text: str) -> str:
     return '\n\n'.join(result)
 
 
-def make_speaker_text(raw_text: str, url: str, secretary: str) -> str:
-    """Strip nav/boilerplate from raw_text to isolate natural speech from all speakers."""
+def make_speaker_text(raw_text: str, url: str, secretary: str,
+                      half_fallback: bool = True) -> str:
+    """Strip nav/boilerplate from raw_text to isolate natural speech from all speakers.
+
+    half_fallback is passed to _find_speech_content_start.  With False (Rubio path,
+    audit X-08) an unanchored page returns '' instead of its second half, and the
+    caller decides the fallback.
+    """
     if not raw_text:
         return ''
     clean = _strip_known_boilerplate(raw_text) or ''
@@ -216,7 +222,9 @@ def make_speaker_text(raw_text: str, url: str, secretary: str) -> str:
                 return re.sub(r'\n{3,}', '\n\n', stripped.strip())
         clean = stripped or clean
 
-    anchor = _find_speech_content_start(clean, secretary)
+    anchor = _find_speech_content_start(clean, secretary, half_fallback=half_fallback)
+    if anchor < 0:
+        return ''
     # Preserve paragraph breaks (\n\n) so extract_secretary_only_text can split on them.
     # Only collapse runs of 3+ blank lines to double-newlines; do not flatten to spaces.
     body = clean[anchor:].strip()

@@ -1,0 +1,42 @@
+# Supplemental Rubio URLs for rubio_backfill.py --urls (plan step P4d / §6 step 4).
+#
+# Items in scope (Rubio speaking or writing in his own voice as Secretary, on
+# state.gov) that the /remarks-secretary-rubio/ collection does not list, or that
+# an older gate dropped. CI passes this file on every run. A URL already in the
+# corpus is deduplicated before any fetch, so entries can stay here after they
+# have been ingested. Where both spellings of a path exist, the live
+# office-of-the-spokesman form comes first: the two are the same page and are
+# fetched once (canonicalize_live_url folds them).
+#
+# Evidence: docs/rubio_coverage_audit.md D-01 and C-01; the URLs come from the
+# Wayback copies of state_press_release-sitemap*.xml and from the 2026-08..10 CI logs.
+
+# D-01: 2025-12-04 remarks to press at the Donald J. Trump Institute of Peace.
+# Off-collection, missing from the corpus (0 hits for "security cooperation, we want to").
+https://www.state.gov/releases/office-of-the-spokesman/2025/12/secretary-of-state-marco-rubio-remarks-to-press-at-donald-j-trump-institute-of-peace/
+https://www.state.gov/releases/office-of-the-spokesperson/2025/12/secretary-of-state-marco-rubio-remarks-to-press-at-donald-j-trump-institute-of-peace/
+
+# D-01: 2026-05-21 remarks to press at the Miami/Homestead airport. The URL has no
+# /YYYY/MM/, so the Date comes from JSON-LD. The releases/office-of-the-spokesperson/
+# form is the one the audit documents (D-01, §6 step 4), so it comes first. The
+# flat-slug form is unevidenced (state.gov's usual spelling for undated pages) and
+# is kept as a fallback: if both resolve, the second copy is dropped after the
+# fetch by slug + Date (corpus_rubio_update's within-backfill dedup).
+https://www.state.gov/releases/office-of-the-spokesperson/secretary-of-state-marco-rubio-remarks-to-press-at-the-miami-homestead-airport/
+https://www.state.gov/secretary-of-state-marco-rubio-remarks-to-press-at-the-miami-homestead-airport/
+
+# C-01: 2026-05-20 Cuban Independence Day video message (translated transcript).
+# The third-person gate dropped it in 12 archive runs, and it now sits below the
+# floor. Both spellings are listed (spokesman = live, spokesperson = as first listed).
+https://www.state.gov/releases/office-of-the-spokesman/2026/05/secretary-rubios-message-to-the-cuban-people-on-their-independence-day/
+https://www.state.gov/releases/office-of-the-spokesperson/2026/05/secretary-rubios-message-to-the-cuban-people-on-their-independence-day/
+
+# D-01 / scope D2 (joint statements he co-signs are in scope): Rubio + RFK Jr.
+# 2025-07-18, U.S. rejection of the 2024 IHR amendments. The slug is truncated
+# exactly like this in the press-release sitemap.
+https://www.state.gov/releases/office-of-the-spokesperson/2025/07/joint-statement-by-secretary-of-state-marco-rubio-and-secretary-of-health-and-human-services-robert-f-kennedy-on-the-united-states-rejection-of-2024-amendments-to-the-international-health-re/
+# 2026-01-22, termination of U.S. membership in the WHO.
+https://www.state.gov/releases/office-of-the-spokesperson/2026/01/termination-of-u-s-membership-in-the-world-health-organization-who-joint-statement-by-secretary-of-state-rubio-and-secretary-of-health-and-human-services-kennedy/
+
+# TODO (plan step 9): append every in-scope item the ground-truth crawl's
+# gt_diff.csv finds after hand review.
