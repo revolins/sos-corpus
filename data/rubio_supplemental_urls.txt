@@ -36,3 +36,12 @@ https://www.state.gov/releases/office-of-the-spokesperson/2026/01/termination-of
 
 # TODO (plan step 9): append every in-scope item the ground-truth crawl's
 # gt_diff.csv finds after hand review.
+
+# Found 2026-10-22 via the translation crawl (T1): English originals of
+# translated Rubio items that discovery never surfaced.
+# Joint statements Rubio released personally (named in the opening line, not the
+# title; the classifier now recognises this -- _JOINT_RELEASED_RE).
+https://www.state.gov/releases/office-of-the-spokesman/2025/08/joint-statement-on-protecting-american-consumers-and-shipping-industries-by-defeating-the-international-maritime-organizations-net-zero-framework-aka-global-carbon-tax/
+https://www.state.gov/releases/office-of-the-spokesman/2025/10/u-s-brazil-meetings/
+# 2026-10-09 Rubio press statement on an undated flat URL with no 'rubio' in it.
+https://www.state.gov/responding-to-panama-earthquake/
