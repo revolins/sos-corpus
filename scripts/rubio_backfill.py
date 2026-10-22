@@ -260,6 +260,15 @@ _SPOKES_BYLINE_RE = re.compile(r'\bSpokes(?:person|man)\b', re.IGNORECASE)
 # "Joint Statement by Secretary of State Marco Rubio and ..." /
 # "...(WHO): Joint Statement by Secretary of State Rubio and Secretary ... Kennedy"
 _JOINT_TITLE_RE = re.compile(r'Joint Statement (?:by|from|of)\b[^:]*\bRubio\b', re.IGNORECASE)
+# A joint statement Rubio releases personally, named in the opening line rather
+# than the title: "The text of the following statement was released by Secretary
+# of State Marco Rubio, Secretary of Commerce ..." (2025-08-12 IMO) or "Joint
+# Statement by Secretary of State Marco Rubio, United States Trade Representative
+# ..." (2025-10-16 U.S.-Brazil). Statements "released by the Governments of ..."
+# do not match: those are government-to-government, not his voice.
+_JOINT_RELEASED_RE = re.compile(
+    r'(?:statement (?:was|is) (?:released|issued) by|Joint Statement by)\s+'
+    r'(?:U\.S\.\s+)?Secretary of State Marco Rubio\b', re.IGNORECASE)
 
 # Sitemap XML namespace
 _SITEMAP_NS = '{http://www.sitemaps.org/schemas/sitemap/0.9}'
@@ -1569,7 +1578,7 @@ class PageDecision(NamedTuple):
 
 
 def _byline_decision(block_meta: dict, title: str, n_rubio_turns: int,
-                     trusted: bool = True) -> tuple[bool, str, bool]:
+                     trusted: bool = True, text: str = '') -> tuple[bool, str, bool]:
     """(keep, reason, joint) from the block byline lines (audit C-02).
 
     Keep when a byline names Rubio, when the block has Rubio speaker labels, or for
@@ -1588,7 +1597,8 @@ def _byline_decision(block_meta: dict, title: str, n_rubio_turns: int,
     title = block_meta.get('block_title') or title or ''
     rubio_by = any('Rubio' in b for b in bylines)
     others = [b for b in bylines if 'Rubio' not in b and not _SPOKES_BYLINE_RE.search(b)]
-    joint_title = bool(_JOINT_TITLE_RE.search(title))
+    joint_title = (bool(_JOINT_TITLE_RE.search(title))
+                   or bool(_JOINT_RELEASED_RE.search((text or '')[:600])))
     is_statement = 'statement' in btype or 'joint statement' in title.lower()
     joint = (rubio_by and bool(others) and is_statement) or joint_title
     if rubio_by:
@@ -1649,7 +1659,7 @@ def classify_rubio_page(url: str, page: dict, block_meta: dict, extracted: dict,
     if not keep:
         return PageDecision(False, reason, '', '', labels)
     by_keep, by_reason, joint = _byline_decision(block_meta, page.get('title', ''), n_turns,
-                                                 trusted)
+                                                 trusted, text=block)
     # A transcript marker under a third-person intro is evidence on its own (a
     # Spokesperson-bylined video message would still be his words).
     if not by_keep and 'marker' not in reason:

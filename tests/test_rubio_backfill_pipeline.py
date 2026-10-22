@@ -522,14 +522,14 @@ def test_exclusions_match_both_path_spellings(tmp_path):
 def test_seed_files_parse():
     repo = _HERE.parent / 'data'
     urls = rb.read_url_list(repo / 'rubio_supplemental_urls.txt')
-    assert len(urls) == 7 and all(u.startswith('https://www.state.gov/') for u in urls)
+    assert len(urls) == 10 and all(u.startswith('https://www.state.gov/') for u in urls)
     assert any('cuban-people-on-their-independence-day' in u for u in urls)
     # The audit-documented Homestead URL (D-01) is seeded, not commented out.
     assert any('/releases/office-of-the-spokesperson/secretary-of-state-marco-rubio-remarks-to-press-'
                'at-the-miami-homestead-airport/' in u for u in urls)
     # the two IOP and the two Cuban spellings each collapse to one fetch; the
     # 404ing flat-slug Homestead variant was removed after the 2026-10-21 dry run
-    assert len(rb._dedup_candidates([rb.Candidate(u, 'supplemental') for u in urls])) == 5
+    assert len(rb._dedup_candidates([rb.Candidate(u, 'supplemental') for u in urls])) == 8
     assert len([u for u in urls if 'miami-homestead' in u]) == 1
     ex = rb.load_exclusions(repo / 'rubio_coverage_exclusions.csv')
     assert len(ex.url_keys) == 8 and len(ex.slug_dates) == 2
@@ -790,3 +790,23 @@ def test_flat_pages_compete_by_lastmod_under_the_cap():
     assert not rb._is_flat_item_url(f'{WWW}/u-s-relations-with-panama-bilateral-fact-sheet/')
     assert not rb._is_flat_item_url(f'{SPOKES}/2026/10/x-y-z-w-v/')
     assert 'sitemap_flat' not in rb._TRUSTED_SOURCES       # needs a Rubio byline or labels
+
+
+def test_joint_statement_released_by_rubio_is_kept():
+    u = f'{SPOKES}/2025/08/joint-statement-on-protecting-american-consumers/'
+    imo = ['The text of the following statement was released by Secretary of State Marco Rubio, '
+           'Secretary of Commerce Howard Lutnick, Secretary of Energy Chris Wright, and Secretary '
+           'of Transportation Sean Duffy.', 'Begin Text:',
+           'President Trump has made it clear that the United States will not accept any agreement.']
+    d, _, _ = _classify(u, _raw(page_html('Joint Statement on Protecting American Consumers',
+                                          'Media Note', ['Office of the Spokesman'], [],
+                                          'August 12, 2025', imo)))
+    assert d.keep and d.reason == 'joint_cosigned' and d.modality == 'joint'
+    # Government-to-government statements are not his voice.
+    gov = ['The text of the following statement was released by the Governments of the United '
+           'States of America and the State of Qatar.', 'Begin Text.',
+           'Secretary of State Marco Rubio and Prime Minister Sheikh Mohammed met in Washington.']
+    d, _, _ = _classify(u, _raw(page_html('Joint Statement on the Seventh U.S.-Qatar Strategic Dialogue',
+                                          'Media Note', ['Office of the Spokesman'], [],
+                                          'December 10, 2025', gov)))
+    assert not d.keep and d.reason == 'spokesperson_byline'
