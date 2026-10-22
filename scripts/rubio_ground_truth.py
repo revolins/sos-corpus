@@ -1352,7 +1352,7 @@ def main(argv=None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     state_out = args.state_out or (out_dir / 'gt_state.json')
     run_id = args.run_id or os.environ.get('GITHUB_RUN_ID', '') or str(int(time.time()))
-    if 'E6' in stages and not args.corpus:
+    if 'E6' in stages and not args.corpus and not args.sample_urls:
         print(f'{LOG} ERROR: E6 needs --corpus (the diff set is "minus corpus keys")',
               file=sys.stderr)
         return 2
