@@ -151,7 +151,14 @@ def test_sitemaps_read_release_children_without_rubio_filter():
     # page-sitemaps keep the old 'rubio' + blacklist filter.
     assert urls[f'{WWW}/secretary-of-state-marco-rubio-remarks-to-press-at-the-miami-homestead-airport/'] == 'sitemap_page'
     assert f'{WWW}/some-other-page/' not in urls
-    assert f'{WWW}/secretary-rubios-call-with-foo/' not in urls
+    assert f'{WWW}/secretary-rubios-call-with-foo/' not in urls      # readout slug
+    # Undated flat release page edited in the window, no 'rubio' in the slug:
+    # a sitemap_flat candidate (2026-10-09 Panama earthquake statement).
+    flat = [c for c in got if c.url == f'{WWW}/responding-to-panama-earthquake/']
+    assert flat and flat[0].source == 'sitemap_flat' and flat[0].lastmod == '2026-10-10'
+    assert f'{WWW}/bureau-of-western-hemisphere-affairs-country-page/' not in urls  # navigation
+    assert f'{WWW}/an-old-undated-flat-release-page/' not in urls                    # lastmod < floor
+    assert stats['sitemap_flat_hits'] == 1
     # A release child last modified before the floor is never fetched; others never read.
     assert f'{WWW}/state_press_release-sitemap2.xml' not in s.calls
     assert f'{WWW}/post_tag-sitemap.xml' not in s.calls
@@ -771,3 +778,15 @@ def test_third_person_intro_with_transcript_wording_is_kept(intro):
 def test_third_person_readout_still_dropped():
     t = 'Secretary of State Marco Rubio met with Foreign Minister X today. They discussed trade.'
     assert rb._active_speaker_decision('https://www.state.gov/x/', t, t)[0] is False
+
+
+def test_flat_pages_compete_by_lastmod_under_the_cap():
+    newer_flat = rb.Candidate(f'{WWW}/responding-to-panama-earthquake/', 'sitemap_flat', lastmod='2026-10-10')
+    older_rel = rb.Candidate(f'{SPOKES}/2026/08/some-august-release/', 'sitemap_release')
+    readout = rb.Candidate(f'{SPOKES}/2026/10/secretary-rubios-call-with-x/', 'sitemap_release')
+    order = sorted([older_rel, readout, newer_flat], key=rb._sitemap_priority)
+    assert order == [newer_flat, older_rel, readout]
+    assert rb._is_flat_item_url(f'{WWW}/responding-to-panama-earthquake/')
+    assert not rb._is_flat_item_url(f'{WWW}/u-s-relations-with-panama-bilateral-fact-sheet/')
+    assert not rb._is_flat_item_url(f'{SPOKES}/2026/10/x-y-z-w-v/')
+    assert 'sitemap_flat' not in rb._TRUSTED_SOURCES       # needs a Rubio byline or labels
