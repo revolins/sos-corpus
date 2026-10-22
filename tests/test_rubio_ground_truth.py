@@ -577,3 +577,23 @@ def test_t1_original_known_ignores_spokesperson_fold():
     from corpus_keys import canonical_url_key
     gt.run_t1(_FakeFetcher(pages), state, {canonical_url_key(_ORIG)})
     assert next(iter(state['translations'].values()))['original_known'] == 1
+
+
+def test_e6_skips_translations_and_probes_linked_originals_first():
+    orig = 'https://www.state.gov/responding-to-panama-earthquake/'
+    other = 'https://www.state.gov/aaa-some-other-undated-page/'
+    cands = {}
+    for u in (other, orig, _ES):
+        cands[gt.url_key(u)] = {'url': u, 'url_key': gt.url_key(u), 'probe_status': 'pending',
+                                'probe_priority': 3}
+    state = gt.new_state()
+    state['translations'] = {'t': {'original_key': gt.url_key(orig)}}
+    seen = []
+    real = gt.probe_page
+    gt.probe_page = lambda f, u, sf: (seen.append(u) or {'gt_class': 'readout'})
+    try:
+        gt.run_e6(_FakeFetcher({}), state, cands, max_probes=0, scope_floor=gt.DEFAULT_SCOPE_FLOOR)
+    finally:
+        gt.probe_page = real
+    assert seen == [orig, other]          # linked original first; translation never probed
+    assert cands[gt.url_key(_ES)]['probe_status'] == 'pending'

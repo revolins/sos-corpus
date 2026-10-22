@@ -1384,8 +1384,16 @@ def load_classified(path: Path | None) -> dict:
 
 def run_e6(fetcher: PoliteFetcher, state: dict, cands: dict, *, max_probes: int,
            scope_floor: date) -> int:
-    todo = [c for c in cands.values() if c['probe_status'] == 'pending']
-    todo.sort(key=lambda c: (c['probe_priority'], tuple(-x for x in (url_year_month(c['url']) or (0, 0))),
+    # Translation pages are T1's (classified by their English original link).
+    todo = [c for c in cands.values() if c['probe_status'] == 'pending'
+            and not translation_lang(c['url'])]
+    # English originals that translations link to come first within their
+    # priority: the 2026-10-22 T1 run showed undated flat pages such as
+    # /responding-to-panama-earthquake/ (a Rubio press statement) hide there.
+    linked = {r.get('original_key') for r in state.get('translations', {}).values()
+              if r.get('original_key')}
+    todo.sort(key=lambda c: (c['probe_priority'], c['url_key'] not in linked,
+                             tuple(-x for x in (url_year_month(c['url']) or (0, 0))),
                              c['url_key']))
     n = 0
     print(f'{LOG} E6: {len(todo)} URL(s) to probe, {fetcher.remaining} request(s) left',
@@ -1598,7 +1606,8 @@ def main(argv=None) -> int:
                               scope_floor=scope_floor)
         except BudgetExhausted as e:
             exhausted = str(e)
-        pending = sum(1 for c in cands.values() if c['probe_status'] in ('pending', 'fetch_error'))
+        pending = sum(1 for c in cands.values() if c['probe_status'] in ('pending', 'fetch_error')
+                      and not translation_lang(c['url']))
         state['stages']['E6'] = 'done' if not pending else 'partial'
 
     if 'T1' in stages and not exhausted:
@@ -1715,7 +1724,7 @@ def main(argv=None) -> int:
             'sitemap_children': len(state['index'] or []), 'sitemaps_read': len(state['sitemaps']),
             'e2_urls': len(state['e2_urls']), 'candidates': len(cands),
             'in_corpus': sum(1 for c in cands.values() if c['in_corpus'] == 1),
-            'probe_pending': sum(1 for c in cands.values() if c['probe_status'] in ('pending', 'fetch_error')),
+            'probe_pending': sum(1 for c in cands.values() if c['probe_status'] in ('pending', 'fetch_error') and not translation_lang(c['url'])),
             'probed_this_run': n_probed, 'probed_total': len(state['probes']),
             'corpus_rubio_rows': len(corpus_rows), 'ground_truth_rows': len(gt_rows),
             'in_scope': sum(1 for r in gt_rows if str(r['in_scope']) == '1'),
