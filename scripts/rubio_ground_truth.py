@@ -1308,7 +1308,35 @@ def parse_args(argv=None) -> argparse.Namespace:
                     help='Event-date floor for in_scope and the E4 stop (default 2025-01-21)')
     ap.add_argument('--offline-fixtures', type=Path,
                     help='Serve requests from DIR/manifest.json instead of the network (dry runs, tests)')
+    ap.add_argument('--sample-urls', type=Path,
+                    help='Fetch only the URLs in this file (one per line) with the polite fetcher, '
+                         'save each page\'s full HTML under <out-dir>/samples/, and exit. '
+                         'For inspecting page markup the crawl cannot see from here.')
     return ap.parse_args(argv)
+
+
+def sample_pages(fetcher: 'PoliteFetcher', urls: list[str], out_dir: Path) -> list[dict]:
+    """Fetch each URL once and save its HTML; returns an index of what was saved."""
+    sdir = out_dir / 'samples'
+    sdir.mkdir(parents=True, exist_ok=True)
+    index = []
+    for i, url in enumerate(urls, 1):
+        try:
+            res = fetcher.get(url)
+        except BudgetExhausted as e:
+            print(f'{LOG} sample: {e}; stopping', file=sys.stderr)
+            break
+        name = f'{i:03d}.html'
+        body = getattr(res.resp, 'text', '') or ''
+        if body:
+            (sdir / name).write_text(body, encoding='utf-8')
+        index.append({'n': i, 'url': url, 'status': res.status, 'error': res.error,
+                      'final_url': str(getattr(res.resp, 'url', '') or ''),
+                      'file': name if body else '', 'bytes': len(body)})
+        print(f'{LOG} sample {i}/{len(urls)} {res.status} {url}', file=sys.stderr)
+    _write_csv(sdir / 'index.csv', ['n', 'url', 'status', 'error', 'final_url', 'file', 'bytes'],
+               index)
+    return index
 
 
 def main(argv=None) -> int:
@@ -1343,6 +1371,14 @@ def main(argv=None) -> int:
     fetcher = PoliteFetcher(session, max_requests=args.max_requests,
                             min_interval=args.min_interval, jitter=args.jitter,
                             deadline=deadline, sleep=sleep)
+
+    if args.sample_urls:
+        urls = [ln.strip() for ln in args.sample_urls.read_text(encoding='utf-8').splitlines()
+                if ln.strip() and not ln.lstrip().startswith('#')]
+        idx = sample_pages(fetcher, urls, out_dir)
+        ok = sum(1 for r in idx if r['status'] == 200)
+        print(f'{LOG} sampled {ok}/{len(urls)} pages OK into {out_dir / "samples"}', file=sys.stderr)
+        return 0 if idx else 1
 
     exhausted = ''
     fatal = []
