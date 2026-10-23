@@ -202,8 +202,9 @@ def test_patch_rows_uses_overrides_and_recomputes_hash():
     headerless = _row(1, 'https://2021-2025.state.gov/the-us-in-asia-economic-engagement-for-good',
                       'The Us In Asia Economic Engagement For Good', 'QUESTION: Hi.', sos='Hi.')
     rows = [good, headerless]
-    audit = cpt.patch_rows(rows, {headerless['URL']: 'The U.S. in Asia: Economic Engagement for Good'})
-    assert [a['Row Id'] for a in audit] == ['0', '1']
+    audit, text_changed = cpt.patch_rows(
+        rows, {headerless['URL']: 'The U.S. in Asia: Economic Engagement for Good'})
+    assert [a['Row Id'] for a in audit] == ['0', '1'] and text_changed == []
     assert good['Title'] == MEETING and good['Row Hash'] == row_hash(good)
     assert headerless['Title'] == 'The U.S. in Asia: Economic Engagement for Good'
     assert audit[1]['source'] == 'title_overrides.csv' and audit[1]['field'] == 'Title'
@@ -252,3 +253,125 @@ def test_verifier_check_aj(tmp_path):
     ov.write_text(f'Row Id,URL,old_title,title,source,reasons,status\n0,{MEETING_URL},x,,,,unresolved\n')
     rc, out = _verify('--input', base, '--strict-titles', '--title-overrides', ov)
     assert rc == 0 and 'listed unresolved' in out, out
+
+
+# ---------------------------------------------------------------------------
+# Restoring the sentence strip_leading_title removed
+# ---------------------------------------------------------------------------
+
+def test_restore_written_statement_with_ordinal_seam():
+    sentence = ('On behalf of the United States of America, I congratulate the people of Latvia '
+                'as you celebrate the 104')
+    body = 'th\nanniversary of your independence.\nWe value our partnership.'
+    raw = (f'Latvia National Day{SUFFIX}\n{CHROME}hide\nLatvia National Day\nPress Statement\n'
+           f'Antony J. Blinken, Secretary of State\nNovember 18, 2022\n{sentence}\n{body}\nTags\n')
+    row = _row(1, 'https://2021-2025.state.gov/latvia-national-day', 'Latvia National Day', raw,
+               sos=body, nat=body)
+    out, status = ct.restore_row(row, sentence)
+    assert status == {'Natural Text': 'restored', 'SOS Text': 'restored'}
+    assert out['SOS Text'] == out['Natural Text']
+    assert out['SOS Text'].startswith(sentence + 'th anniversary of your independence.\n')
+
+
+def test_restore_interview_keeps_only_the_secretary_turn():
+    raw = ('Interview With Zain Verjee of CNN\nU.S. Department of State\nSecretary Condoleezza Rice\n'
+           'Washington, DC\nMay 1, 2008\nQUESTION:\nThanks for joining us.\nSECRETARY RICE:\n'
+           'Nice to be with you.\nQUESTION:\nLet us start with Lebanon.\nSECRETARY RICE:\n'
+           'Well, first of all, Lebanon matters.\n')
+    nat = raw[raw.index('QUESTION:'):]
+    row = _row(2, 'https://2001-2009.state.gov/secretary/rm/2008/05/1.htm',
+               'Interview With Zain Verjee of CNN', raw,
+               sos='Well, first of all, Lebanon matters.', nat=nat, sec='Rice')
+    out, status = ct.restore_row(row, 'Nice to be with you.')
+    assert status['Natural Text'] == 'present'
+    assert out == {'SOS Text': 'Nice to be with you.\n\nWell, first of all, Lebanon matters.'}
+
+
+def test_restore_declines_other_speaker_and_header_titles():
+    raw = ('Remarks at a School\nU.S. Department of State\nMay 1, 2008\nMR. HOST:\n'
+           'Please welcome Secretary Condoleezza Rice. (Applause.)\nSECRETARY RICE:\nThank you all.\n')
+    nat = raw[raw.index('MR. HOST:'):]
+    row = _row(3, 'https://2001-2009.state.gov/secretary/rm/2008/05/2.htm', 'Remarks at a School',
+               raw, sos='Thank you all.', nat=nat, sec='Rice')
+    out, status = ct.restore_row(row, 'Please welcome Secretary Condoleezza Rice. (Applause.)')
+    assert out == {} and status['SOS Text'] == 'not_secretary'
+    # an old title from the page header is not speech: nothing to restore
+    assert ct.restore_row(row, 'Remarks at a School') == ({}, {})
+
+
+def test_strip_leading_title_keeps_speech_titles():
+    from corpus_finalize_v4_30 import strip_leading_title
+    text = 'Glad to be with you, as always.\nNow, on the question of trade.'
+    assert strip_leading_title(text, 'Glad to be with you, as always.') == text
+    hdr = 'Remarks at the Opening of the Ministerial\nThank you all for coming.'
+    assert strip_leading_title(hdr, 'Remarks at the Opening of the Ministerial') == 'Thank you all for coming.'
+
+
+# ---------------------------------------------------------------------------
+# Second-audit findings
+# ---------------------------------------------------------------------------
+
+def test_department_of_state_inside_a_title_is_kept():
+    raw = ('Secretary of State Michael R. Pompeo at the U.S. Department of State 230th Anniversary '
+           f'Celebration{SUFFIX}\nSkip to content\n')
+    assert ct.page_title(raw)[0].endswith('U.S. Department of State 230th Anniversary Celebration')
+    flat = ('Russia Move into Georgia U.S. Department of State Other State Department Archive Sites '
+            'Russia Move into Georgia Statement by Secretary Condoleezza Rice')
+    assert ct.page_title(flat) == ('Russia Move into Georgia', 'flat_prefix')
+    chrome = ("U.S. Department of State: Secretary Powell Interview on Egypt's Nile Television "
+              'U.S. Department of State Other State Department Archive Sites You are in:')
+    assert ct.page_title(chrome)[0] == "Secretary Powell Interview on Egypt's Nile Television"
+
+
+def test_lone_a_circumflex_is_removed():
+    assert ct.fix_text('Indian Independence DayÂ') == 'Indian Independence Day'
+    assert ct.fix_text('Pakistan Independence Day Â') == 'Pakistan Independence Day'
+
+
+def test_truncated_heading_is_flagged_and_continued():
+    raw = ('4/4/99 Albright op-ed on crisis in Kosovo\nOther State Department Archive Sites\n'
+           'Secretary of State Madeleine K. Albright\nOp-Ed on the Crisis in Kosovo in\n'
+           'The Washington Post\nApril 4, 1999\nThe crisis in Kosovo is grave.\n')
+    row = _row(1, 'https://1997-2001.state.gov/statements/1999/990404a.html',
+               'Op-Ed on the Crisis in Kosovo in', raw, sos='The crisis in Kosovo is grave.',
+               sec='Albright')
+    assert ct.repair_title(row) == ('Op-Ed on the Crisis in Kosovo in The Washington Post',
+                                    ['truncated'], 'heading_join')
+    raw2 = ("Statement on International Women's Day\nU.S. Department of State\nInternational Women's Day\n"
+            'Statement by Secretary Condoleezza Rice\nMarch 7, 2007\nToday, we pay tribute.\n')
+    row2 = _row(2, 'https://2001-2009.state.gov/secretary/rm/2007/mar/81497.htm', 'Statement by', raw2,
+                sos='Today, we pay tribute.', sec='Rice')
+    assert ct.repair_title(row2)[:2] == ("Statement on International Women's Day", ['truncated'])
+
+
+def test_body_first_line_is_not_a_headline():
+    raw = ('The Democratic People’s Republic of Korea (DPRK) continues its unprecedented pace, scale, '
+           'and scope of ballistic missile launches this year.\nThis year alone, it has launched more.')
+    assert ct.page_title(raw) == ('', '')
+
+
+def test_transcript_line_titles_are_speech():
+    raw = 'SECRETARY BLINKEN: Marc, good morning.\nFOREIGN MINISTER GARNEAU: Good morning, Tony.\n'
+    assert ct.raw_header(raw) == ''
+    row = _row(3, 'https://2021-2025.state.gov/x-before-their-meeting-2', 'Marc, good morning.', raw,
+               sos='Marc, good morning.')
+    assert 'speech_sentence' in ct.title_problems(row)
+    deep = ('The InterAction 2004 Annual Forum Luncheon\nU.S. Department of State\nMay 1, 2004\n'
+            + 'Nav line\n' * 3000 + 'SECRETARY POWELL:\nDid you see that? An NGO.\nQUESTION:\nThanks.\n')
+    row2 = _row(4, 'https://2001-2009.state.gov/secretary/former/powell/remarks/32580.htm',
+                'Did you see that? An NGO.', deep, sos='Thank you all.', sec='Powell')
+    assert 'speech_sentence' in ct.title_problems(row2)
+    assert ct.repair_title(row2)[0] == 'The InterAction 2004 Annual Forum Luncheon'
+
+
+def test_stage_direction_chrome_and_mojibake_titles():
+    assert ct.page_title('(Via interpreter.)\nQUESTION : Good evening.\n') == ('', '')
+    raw = ("U.S. Department of State: Secretary Powell Interview on Egypt's Nile Television "
+           'U.S. Department of State Other State Department Archive Sites You are in: x')
+    row = _row(1, 'https://2001-2009.state.gov/secretary/former/powell/remarks/2003/20660.htm',
+               "U.S. Department of State: Secretary Powell Interview on Egypt's Nile Television "
+               'U.S. Department of State', raw, sos='Thank you.', sec='Powell')
+    assert ct.repair_title(row)[:2] == ("Secretary Powell Interview on Egypt's Nile Television",
+                                        ['site_chrome'])
+    assert 'mojibake' in ct.bad_title_reasons('Terrorist Attack in Bnei BrakÂ', 'https://x/y')
+

@@ -1184,6 +1184,12 @@ def strip_leading_title(text: str, title: str) -> str:
     title_norm = re.sub(r'\s+', ' ', title.lower().strip())
     if len(title_norm) < 15:
         return text
+    # A Title that reads like speech is not a header to strip: v4.4 set ~700
+    # Titles to the speech's first sentence, and this pass then deleted that
+    # sentence from ~640 texts (restored in the 2026-10 title patch).
+    from corpus_title import is_utterance_shaped
+    if is_utterance_shaped(title):
+        return text
     # Accumulate first 1-4 lines and check similarity to the title
     accumulated = ''
     last_i = 0

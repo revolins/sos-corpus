@@ -22,6 +22,7 @@ Stdlib only: the verifier imports this module.
 
 from __future__ import annotations
 
+import html
 import re
 from urllib.parse import urlparse
 
@@ -35,9 +36,9 @@ DATE_PREFIX_RE = re.compile(r'^\d{1,2}/\d{1,2}/\d{2,4}\s*(?:--\s*)?:?\s*', re.S)
 # Pages whose Raw Text lost its line breaks: the headline runs straight into the
 # site chrome.
 _FLAT_CHROME_RE = re.compile(
-    r'\s*[-|–]\s*(?:United States |U\.S\. )?Department of State\b'
-    r'|\s+(?:U\.S\. Department of State\b|Skip to (?:Main )?Content\b|Other State Department\b'
-    r'|An official website of the United States)'
+    r'(?:\s*[-|–]\s*(?:United States |U\.S\. )?Department of State)?'
+    r'(?:\s+U\.S\. Department of State)?'
+    r'\s+(?:Skip to (?:[Mm]ain )?[Cc]ontent|Other State Department|An official website|You are in:)'
 )
 _HIDE_RE = re.compile(r'\nhide\n')
 # A first line that is not a headline: chrome, or a speaker label (Raw Text that
@@ -45,7 +46,8 @@ _HIDE_RE = re.compile(r'\nhide\n')
 _NOT_HEADLINE_RE = re.compile(
     r'^(?:U\.S\. Department of State|United States Department of State|Skip to (?:main )?content'
     r'|An official website|Home|Page not found|Archive)\b'
-    r"|^[A-Z][A-Z .'’-]{2,}:",
+    r"|^[A-Z][A-Z .'’-]{2,}:"
+    r'|^\([^)]*\)\.?$',  # a stage direction: "(Via interpreter.)"
     re.IGNORECASE,
 )
 # A bare content-type label ("Remarks") where the headline should be: some pages'
@@ -75,6 +77,10 @@ _FIRST_PERSON_RE = re.compile(r"\b(?:I|I'm|I’m|I've|I’ve|I'll|I’ll|me|my|w
 _SENTENCE_END_RE = re.compile(r'[.?!]["”’)]?$')
 _ABBREV_END_RE = re.compile(r'\b(?:Jr|Sr|St|U\.S|D\.C|Inc|Co|Ltd|No|Mr|Mrs|Ms|Dr)\.$')
 _FRAGMENT_START_RE = re.compile(r'^(?:And|Of|To|With|At|On|For|Before|In|After|By) ')
+# A heading cut at a line break: "Statement by", "Op-Ed on the Crisis in Kosovo in".
+_TRUNCATED_END_RE = re.compile(
+    r'(?:\b(?:by|of|the|and|for|to|in|on|at|with|a|an|from|before|after|between)|[,:;–-])$',
+    re.IGNORECASE)
 # First transcript speaker label: Raw Text before it is the page header (title,
 # byline, dateline), after it is the speech.
 _LABEL_LINE_RE = re.compile(r"\n(?:[A-Z][A-Z .'’-]{1,60}|QUESTION|Q):", re.MULTILINE)
@@ -124,14 +130,21 @@ _DATE_LINE_RE = re.compile(
     r'|Jan\.|Feb\.|Mar\.|Apr\.|Aug\.|Sept?\.|Oct\.|Nov\.|Dec\.)\s+\d{1,2},\s+\d{4}\n')
 
 
+# How far past the header to look for speech text: archive pages carry up to
+# ~15k characters of navigation before the item.
+_BODY_WINDOW = 20000
+
+
 def raw_header(raw_text: str) -> str:
     """Raw Text before the speech starts: up to the first speaker label or, for
     a written item, its dateline."""
     raw = raw_text or ''
+    if re.match(r"(?:[A-Z][A-Z .'’-]{1,60}|QUESTION|Q):", raw):
+        return ''  # Raw Text that starts at the transcript has no header
     # 2017+ pages put the site navigation first; the item starts at "hide".
     m = _HIDE_RE.search(raw)
     start = m.start() if m else 0
-    window = raw[start:start + 6000]
+    window = raw[start:start + _BODY_WINDOW]
     ends = [x.start() for x in (_LABEL_LINE_RE.search(window), _DATE_LINE_RE.search(window)) if x]
     return raw[:start + min(ends)] if ends else raw[:start + 1500]
 
@@ -143,13 +156,17 @@ def fix_text(text: str) -> str:
     pipeline wrote."""
     if not text:
         return text
+    text = html.unescape(text)
     try:
         import ftfy  # optional; the verifier compares with norm() and never needs it
-        return ftfy.fix_text(text)
+        text = ftfy.fix_text(text)
+        # a lone "Â" (mangled NBSP) that ftfy leaves when nothing else is mis-encoded
+        return re.sub(r'Â(?=\s|$)', '', text).strip()
     except ImportError:
         text = re.sub(r'Ã([\x80-\xbf])',
                       lambda m: bytes([0xC3, ord(m.group(1))]).decode('utf-8', errors='replace'),
                       text)
+        text = re.sub(r'Â(?=\s|$)', '', text).strip()
         return text.replace('’', "'").replace('‘', "'").replace('“', '"').replace('”', '"')
 
 
@@ -159,11 +176,21 @@ def norm(s: str) -> str:
     return re.sub(r'[^0-9a-z]+', ' ', s).strip()
 
 
+_SITE_PREFIX_RE = re.compile(r'^U\.S\. Department of State:\s*')
+
+
 def clean_title(title: str) -> str:
-    title = SITE_SUFFIX_RE.sub('', title or '').strip()
+    title = _SITE_PREFIX_RE.sub('', SITE_SUFFIX_RE.sub('', title or '').strip())
     title = DATE_PREFIX_RE.sub('', title).strip()
     title = re.sub(r'[\xa0\u202f\u2009\u200b]', ' ', title)
     return re.sub(r'\s{2,}', ' ', title).strip()
+
+
+def _is_body_sentence(text: str) -> bool:
+    """A first line that is the item's opening sentence, not a title (pages whose
+    Raw Text starts at the body): long, and ending like a sentence."""
+    words = text.split()
+    return len(words) > 25 or (len(words) > 12 and text.rstrip().endswith('.'))
 
 
 def page_title(raw_text: str) -> tuple[str, str]:
@@ -195,7 +222,7 @@ def page_title(raw_text: str) -> tuple[str, str]:
         if m:  # a short flattened page: the chrome is on line 1
             cand, source = clean_title(cand[:m.start()]), 'flat_prefix'
         if (4 <= len(cand) <= 300 and not _NOT_HEADLINE_RE.match(first)
-                and not _BARE_TYPE_RE.match(cand)):
+                and not _BARE_TYPE_RE.match(cand) and not _is_body_sentence(cand)):
             return cand, source
     m = _FLAT_CHROME_RE.search(raw[:600])
     if m:
@@ -249,14 +276,45 @@ def bad_title_reasons(title: str, url: str, speech_texts: tuple[str, ...] = (),
         header = raw_header(raw_text) if raw_text else ''
         # The old title pass sometimes MOVED the first sentence out of the text,
         # so also look for it in the Raw Text body after the header.
-        body = norm(raw_text[len(header):len(header) + 3000]) if raw_text else ''
+        body = norm(raw_text[len(header):len(header) + _BODY_WINDOW]) if raw_text else ''
         in_speech = any(nt in norm(s[:3000]) for s in speech_texts if s) or nt in body
         if in_speech:
             if (raw_text and nt not in norm(header)) or (len(nt) >= 6 and is_utterance_shaped(t)):
                 reasons.append('speech_sentence')
     if _FRAGMENT_START_RE.match(t) and nh and nh.endswith(nt) and nh != nt:
         reasons.append('fragment_start')
+    if raw_text and 'speech_sentence' not in reasons and len(nt) >= 6:
+        i = raw_text.find('\n' + t[:40])
+        if i > 0 and _label(raw_text[:i].rsplit('\n', 1)[-1])[0]:
+            reasons.append('speech_sentence')  # the line right after a speaker label
+    if re.search(r"\b(?:SECRETARY|QUESTION|MODERATOR)(?: [A-Z][A-Z'’.-]+)*:", t) and 'speech_sentence' not in reasons:
+        reasons.append('speech_sentence')  # a transcript line, label and all
+    if _SITE_PREFIX_RE.match(t) or SITE_SUFFIX_RE.search(t):
+        reasons.append('site_chrome')
+    if re.search(r'Ã[\x80-\xbf]|â€|Â(?=\s|$)|\ufffd', t):
+        reasons.append('mojibake')
+    if _TRUNCATED_END_RE.search(t) and nh != nt:
+        reasons.append('truncated')
     return reasons
+
+
+def continued_heading(title: str, raw_text: str) -> str:
+    """A truncated Title joined with the heading lines that follow it in Raw
+    Text ("Op-Ed on the Crisis in Kosovo in" / "The Washington Post"), or ''."""
+    t = (title or '').strip()
+    raw = raw_text or ''
+    i = raw.find('\n' + t + '\n')
+    if not t or i < 0:
+        return ''
+    joined = t
+    for line in raw[i + len(t) + 2:].split('\n')[:3]:
+        line = line.strip()
+        if not line or len(line) > 120 or _DATE_LINE_RE.match('\n' + line + '\n') or _label(line)[0]:
+            break
+        joined = f'{joined} {line}'
+        if not _TRUNCATED_END_RE.search(joined):
+            return joined
+    return ''
 
 
 def repair_title(row: dict, fix=fix_text) -> tuple[str, list[str], str]:
@@ -278,6 +336,10 @@ def repair_title(row: dict, fix=fix_text) -> tuple[str, list[str], str]:
     reasons = bad_title_reasons(
         title, url, (row.get('SOS Text') or '', row.get('Natural Text') or ''), headline,
         row.get('Raw Text') or '')
+    if reasons == ['truncated']:
+        joined = continued_heading(title, row.get('Raw Text') or '')
+        if joined:
+            return fix(joined).strip() if fix else joined, reasons, 'heading_join'
     if not headline or headline == title:
         return '', reasons, source
     host = urlparse(url).netloc.lower()
@@ -308,3 +370,158 @@ def title_problems(row: dict) -> list[str]:
             and norm(title) != norm(headline)):
         problems = ['headline_mismatch']
     return problems
+
+
+# ---------------------------------------------------------------------------
+# Text the old title pass removed
+# ---------------------------------------------------------------------------
+# corpus_finalize_v4_30.strip_leading_title deletes leading lines of a text that
+# repeat its Title. Once v4.4 had set the Title to the speech's first sentence,
+# that pass deleted the sentence: written statements lost their opening sentence
+# (often leaving a <sup> ordinal fragment, "nd\nanniversary ..."), interviews lost
+# the Secretary's first answer from SOS Text. The deleted lines are the old
+# title's lines and survive in the less-processed copy: Natural Text is restored
+# from Raw Text, SOS Text from the restored Natural Text, keeping only the
+# Secretary's turns (SOS Text is Secretary-only, turns joined by a blank line).
+
+# Statuses restore_head() reports when it declines (the row is left unchanged).
+RESTORE_FAILURES = frozenset({'no_head', 'too_long', 'no_title', 'not_secretary', 'boilerplate'})
+
+_LABEL_RE = re.compile(r"^((?:[A-Z][A-Z .'’()\-]{1,60})|QUESTION|Q)\s*:\s*(.*)$"
+                       r"|^((?:[A-Z][A-Z .'’()\-]{1,60}))\s*$")
+_ORDINAL_SEAM_RE = re.compile(r'(\d)\n(st|nd|rd|th)\b\n?')
+_ORDINAL_PUNCT_RE = re.compile(r'(\d)\n(st|nd|rd|th)\n(?=[.,;:)])')
+
+
+def _label(line: str) -> tuple[str | None, str]:
+    """(speaker label, rest of line) for "LABEL: text" / "LABEL" lines, else (None, line)."""
+    m = _LABEL_RE.match(line.strip())
+    if not m:
+        return None, line
+    lab = (m.group(1) or m.group(3) or '').strip()
+    if m.group(3) and len(lab.split()) < 2 and lab not in ('QUESTION', 'Q', 'MODERATOR'):
+        return None, line  # a lone capitalised word on its own line, not a label
+    return lab, (m.group(2) or '')
+
+
+def _is_secretary(label: str, surname: str) -> bool:
+    return (bool(re.search(rf'\b{re.escape(surname.upper())}\b', label))
+            or label in ('SECRETARY', 'THE SECRETARY'))
+
+
+def _speaker_is_secretary(src: str, pos: int, surname: str) -> bool | None:
+    """Who speaks the line starting at pos: its own label, else the last label
+    before it; None when the text has no labels (a written item)."""
+    end = src.find('\n', pos)
+    own, _ = _label(src[pos:end if end >= 0 else len(src)])
+    if own:
+        return _is_secretary(own, surname)
+    last = None
+    for line in src[max(0, pos - 3000):pos].split('\n'):
+        lab, _ = _label(line)
+        if lab:
+            last = lab
+    return None if last is None else _is_secretary(last, surname)
+
+
+def _join(prefix: str, text: str) -> str:
+    """prefix + text, rejoining a <sup> ordinal split at the seam ("35\nth\nanniversary")."""
+    out = prefix + text
+    n = len(prefix) + 12
+    head = _ORDINAL_PUNCT_RE.sub(r'\1\2', out[:n])
+    return _ORDINAL_SEAM_RE.sub(lambda m: m.group(1) + m.group(2) + ' ', head) + out[n:]
+
+
+def title_in_body(title: str, raw_text: str) -> bool:
+    """The (old) title is speech content: in the Raw Text body, not its header."""
+    nt = norm(title)
+    header = raw_header(raw_text)
+    body = raw_text[len(header):len(header) + _BODY_WINDOW]
+    return len(nt) >= 6 and nt not in norm(header) and nt in norm(body)
+
+
+def restore_head(text: str, src: str, title: str, surname: str,
+                 secretary_only: bool) -> tuple[str, str, str]:
+    """(new_text, status, restored_prefix) for one text field.
+
+    status: 'restored'; 'present' (nothing missing); 'not_found' (title not in
+    src); or a RESTORE_FAILURES reason, which leaves the text unchanged.
+    """
+    t = (title or '').strip()
+    nt = norm(t)
+    if len(nt) < 6 or not text or nt in norm(text[:len(t) + 400]):
+        return text, 'present', ''
+    start = -1
+    for k in (40, 25):
+        i = src.find(t[:k])
+        if i >= 0:
+            start = src.rfind('\n', 0, i) + 1
+            break
+    if start < 0:
+        return text, 'not_found', ''
+    body_text = re.sub(r'^[\s:]+', '', text)
+    q = -1
+    for head in (body_text[:40], body_text.split('\n', 1)[0][:40], body_text[:20]):
+        if len(head.strip()) >= 3:
+            q = src.find(head, start + len(t[:25]))
+            if q >= 0:
+                break
+    if q <= start:
+        return text, 'no_head', ''
+    seg = src[start:q]
+    if not secretary_only:
+        if len(norm(seg)) > 1.6 * len(nt) + 40:
+            return text, 'too_long', ''
+        return _join(seg, text.lstrip()), 'restored', seg
+    if _speaker_is_secretary(src, start, surname) is False:
+        return text, 'not_secretary', ''
+    keep, current, labelled = [], True, False
+    for line in seg.split('\n'):
+        lab, rest = _label(line)
+        if lab:
+            current, labelled, line = _is_secretary(lab, surname), True, rest
+        if current and line.strip():
+            keep.append(line.strip())
+    kept = '\n'.join(keep)
+    if nt not in norm(kept):
+        return text, 'no_title', ''
+    if len(norm(kept)) > 1.6 * len(nt) + 40:
+        return text, 'too_long', ''
+    # Separate turns are joined by a blank line; a turn that continues into the
+    # existing text keeps the source's own line break.
+    prefix = kept + '\n\n' if labelled else seg
+    if 'available here' in prefix:
+        return text, 'boilerplate', ''
+    return _join(prefix, body_text), 'restored', prefix
+
+
+def restore_row(row: dict, old_title: str, fix=fix_text) -> tuple[dict, dict]:
+    """({field: restored text}, {field: status}) for SOS / Natural Text.
+
+    old_title: the Title before repair (it is what strip_leading_title matched).
+    fix: the corpus text normalisation applied to Raw Text before matching.
+    """
+    raw = row.get('Raw Text') or ''
+    if not title_in_body(old_title, raw):
+        return {}, {}
+    # Only a title that was speech can have been stripped from the speech: a
+    # headline copied from another item can also sit in the page body (in a
+    # related-links list) and must not be spliced into the text.
+    headline = page_title(raw)[0]
+    texts = (row.get('SOS Text') or '', row.get('Natural Text') or '')
+    if 'speech_sentence' not in bad_title_reasons(old_title, row.get('URL') or '', texts,
+                                                  fix(headline) if headline else '', raw):
+        return {}, {}
+    who = row.get('Secretary', '')
+    nat0, sos0 = row.get('Natural Text') or '', row.get('SOS Text') or ''
+    nat, nat_status, nat_prefix = restore_head(nat0, fix(raw), old_title, who, False)
+    if sos0 == nat0:  # a written item: SOS Text is the same text
+        sos, sos_status = nat, nat_status
+    else:
+        sos, sos_status, _ = restore_head(sos0, nat, old_title, who, True)
+        if (sos_status in RESTORE_FAILURES and nat_status == 'restored'
+                and not any(_label(line)[0] for line in nat0.split('\n')[:200])):
+            # label-free item whose SOS differs slightly from Natural: same prefix
+            sos, sos_status = _join(nat_prefix, re.sub(r'^[\s:]+', '', sos0)), 'restored'
+    out = {f: v for f, v, v0 in (('Natural Text', nat, nat0), ('SOS Text', sos, sos0)) if v != v0}
+    return out, {'Natural Text': nat_status, 'SOS Text': sos_status}
