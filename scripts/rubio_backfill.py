@@ -66,6 +66,7 @@ from speech_recover import (
     _extract_modern_state_content,
 )
 from speech_extract import BASE_DIR, make_speaker_text
+import corpus_title
 import rubio_turns
 
 try:
@@ -1259,6 +1260,8 @@ def fetch_rubio_page(url: str, session: requests.Session, *,
     title = ''
     if soup.title and soup.title.string:
         title = soup.title.string.strip()
+    og = soup.find('meta', attrs={'property': 'og:title'})
+    og_title = (og.get('content') or '').strip() if og else ''
 
     return {
         'raw_text': raw_text,
@@ -1267,8 +1270,24 @@ def fetch_rubio_page(url: str, session: requests.Session, *,
         'jsonld_location_name': jsonld_location,
         'article_meta_doctype': str(ld.get('@type', '')),
         'title': title,
+        'og_title': og_title,
+        'jsonld_headline': str(ld.get('headline', '') or ''),
         'final_url': final_url,
     }
+
+
+def page_headline(page: dict) -> str:
+    """The Title: the page headline, by the same rule the corpus Title patch and
+    verifier Check AJ use (corpus_title.page_title on Raw Text: the on-page
+    headline, else the <title>), then the JSON-LD headline / og:title. Never the
+    URL slug or the speech text -- with nothing found it stays empty, and the
+    per-row gate's Empty Title check holds the row."""
+    headline, _ = corpus_title.page_title(page.get('raw_text') or '')
+    for cand in (headline, page.get('jsonld_headline'), page.get('og_title'), page.get('title')):
+        cand = corpus_title.clean_title(cand or '')
+        if cand and not corpus_title._BARE_TYPE_RE.match(cand):
+            return cand
+    return ''
 
 
 # ---------------------------------------------------------------------------
@@ -2499,12 +2518,7 @@ def run(args: argparse.Namespace) -> None:
                  text=exclusions.slug_dates[sd_key])
             continue
 
-        raw_title = (page.get('title') or '').strip()
-        # Strip "- United States Department of State" suffix.
-        title = re.sub(
-            r'\s*[-|–]\s*(?:United\s+States\s+|U\.S\.\s+)?Department\s+of\s+State\s*$',
-            '', raw_title, flags=re.IGNORECASE,
-        ).strip()
+        title = page_headline(page)
 
         row = {
             'speech_type':  stype,
