@@ -48,6 +48,15 @@ except BaseException as _rcr_err:  # same reasoning as the import above
 else:
     _RCR_IMPORT_ERROR = ''
 
+# Check AJ (Title is the page headline). Stdlib only, but guarded the same way.
+try:
+    import corpus_title as _ct  # type: ignore[import]
+except BaseException as _ct_err:
+    _ct = None
+    _CT_IMPORT_ERROR = f'{type(_ct_err).__name__}: {_ct_err}'
+else:
+    _CT_IMPORT_ERROR = ''
+
 csv.field_size_limit(10 ** 8)
 
 EXPECTED_COLUMNS = [
@@ -201,7 +210,7 @@ def main() -> None:
     ap.add_argument('--allow-changed-rows', default=None,
                      help='Audit CSV from a deliberate text patch (columns Row Id, field). '
                           'Check Q then accepts a baseline difference in exactly those '
-                          '(Row Id, field) pairs -- and only in SOS Text / Natural Text -- '
+                          '(Row Id, field) pairs -- and only in SOS Text / Natural Text / Title -- '
                           'and still fails on any other difference.')
     # ── Rubio coverage checks AC-AI (all opt-in; see the block before the date-gap check)
     ap.add_argument('--rubio-coverage', action='store_true',
@@ -231,6 +240,17 @@ def main() -> None:
     ap.add_argument('--gt-grace-days', type=int, default=7,
                      help='AC: a missing item first seen within this many days of the corpus '
                           'max Date is a warning (default %(default)s).')
+    ap.add_argument('--titles', action='store_true',
+                     help='Check AJ: Title must be the page headline recovered from Raw Text, '
+                          'not a speech sentence, a URL-slug title or half of a split heading '
+                          '(corpus_title.py). FAIL for new or changed titles (every row when no '
+                          '--baseline is given), WARN for titles unchanged since --baseline.')
+    ap.add_argument('--strict-titles', action='store_true',
+                     help='Like --titles, but unchanged legacy titles FAIL too.')
+    ap.add_argument('--title-overrides', default=None,
+                     help='Title overrides CSV (URL, status): an AJ failure on a URL listed '
+                          'with status "unresolved" is a warning '
+                          '(default: data/title_overrides.csv next to scripts/).')
     ap.add_argument('--as-of', default=None,
                      help='AI/allowlist reference date, YYYY-MM-DD (default: today UTC).')
     args = ap.parse_args()
@@ -506,7 +526,7 @@ def main() -> None:
         if args.allow_changed_rows:
             with open(args.allow_changed_rows, newline='', encoding='utf-8') as f:
                 for a in csv.DictReader(f):
-                    if a.get('field') in ('SOS Text', 'Natural Text'):
+                    if a.get('field') in ('SOS Text', 'Natural Text', 'Title'):
                         allowed.add((str(a['Row Id']), a['field']))
         q_mismatches = []
         q_allowed = set()
@@ -1164,6 +1184,58 @@ def main() -> None:
                           f'--baseline (FAIL under --strict-rubio-coverage) — {bk["legacy"][:10]}')
                 if bk['allow']:
                     print(f'  warn  Check {c}: {labels[c]}: {len(bk["allow"])} allowlisted row(s) — {bk["allow"][:10]}')
+
+    # Check AJ — Title is the page headline (corpus_title.py). The v4.4-v4.11
+    # finalize passes filled ~5,400 titles from the speech's first sentence
+    # ("That's right."), the title-cased URL slug ("Kazakhstans Republic Day")
+    # or half of a split heading ("And Greet With Mission Kuwait"); the headline
+    # itself survives in Raw Text. A title is legacy when --baseline has the same
+    # URL with the same Title.
+    if not (args.titles or args.strict_titles):
+        print('  skip  Check AJ: no --titles given, Title-is-headline check not run')
+    elif _ct is None:
+        fail(f'Check AJ: corpus_title.py not importable ({_CT_IMPORT_ERROR})')
+    else:
+        ov_path = Path(args.title_overrides) if args.title_overrides else (
+            Path(__file__).resolve().parent.parent / 'data' / 'title_overrides.csv')
+        unresolved: set[str] = set()
+        override_titles: dict[str, str] = {}
+        if ov_path.exists():
+            with ov_path.open(newline='', encoding='utf-8') as f:
+                for a in csv.DictReader(f):
+                    if a.get('status') == 'unresolved':
+                        unresolved.add(a.get('URL', ''))
+                    elif a.get('status') == 'override':
+                        override_titles[a.get('URL', '')] = _ct.norm(a.get('title', ''))
+        base_titles: dict[str, str] = {}
+        if args.baseline:
+            base_titles = {b.get('URL', ''): b.get('Title', '') for b in baseline_rows.values()}
+        aj = {'new': [], 'legacy': [], 'allow': []}
+        for r in rows:
+            url = r.get('URL', '')
+            # A reviewed override is the headline the original scrape recorded for a
+            # row whose Raw Text has none (it can coincide with the slug title).
+            if url in override_titles and override_titles[url] == _ct.norm(r.get('Title', '')):
+                continue
+            problems = _ct.title_problems(r)
+            if not problems:
+                continue
+            legacy = url in base_titles and base_titles[url] == r.get('Title', '')
+            b = ('allow' if url in unresolved
+                 else 'legacy' if legacy and not args.strict_titles else 'new')
+            aj[b].append((r.get('Row Id'), '+'.join(problems)))
+        label = 'Title is not the page headline (speech sentence / URL slug / split heading / mismatch)'
+        if aj['new']:
+            fail(f'Check AJ: {label}: {len(aj["new"])} '
+                 f'{"row(s)" if args.strict_titles else "new/changed row(s)"}, sample {aj["new"][:10]}')
+        else:
+            ok(f'Check AJ: no {"" if args.strict_titles else "new/changed "}row whose {label[:5].lower()}{label[5:]}')
+        if aj['legacy']:
+            print(f'  warn  Check AJ: {label}: {len(aj["legacy"])} legacy row(s) unchanged since '
+                  f'--baseline (FAIL under --strict-titles) — {aj["legacy"][:10]}')
+        if aj['allow']:
+            print(f'  warn  Check AJ: {label}: {len(aj["allow"])} row(s) listed unresolved in '
+                  f'{ov_path.name} — {aj["allow"][:10]}')
 
     # Check AH — listing reconciliation. Every href the archive walk listed (on or
     # after the discovery window's since date) must be accounted for: in the

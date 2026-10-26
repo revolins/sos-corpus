@@ -82,6 +82,7 @@ try:
         write_unresolved_gpe_audit,
         OUTPUT_COLUMNS,
     )
+    import corpus_title  # type: ignore[import]
 except ImportError as _e:
     sys.exit(f"ERROR: cannot import cleaning/enrichment pipeline — {_e}")
 
@@ -156,7 +157,10 @@ def _map_backfill_row(rec: dict[str, str], next_rid: int) -> dict[str, str]:
         'Row Id':       str(next_rid),
         'Secretary':    'Rubio',
         'Date':         rec.get('Date', ''),
-        'Title':        rec.get('Title', ''),
+        # The headline as rubio_backfill read it, normalised the way every other
+        # Title is (finalize's ftfy pass: quotes, NBSP, mojibake) so Check AJ
+        # compares like with like.
+        'Title':        corpus_title.fix_text(corpus_title.clean_title(rec.get('Title', '') or '')),
         'Speech Type':  st,
         # No default here on purpose. An absent Location used to become
         # 'Washington, D.C.', inventing a dateline for a speech that might
@@ -353,7 +357,7 @@ def gate_new_rows(new_rows: list[dict], verifier: Path,
         # probe row counts as new, so a FAIL holds the row.
         extra = ['--max-gap-days', str(10 ** 7),
                  '--manifest-path', str(tdp / 'no_manifest.json'),
-                 '--rubio-coverage']
+                 '--rubio-coverage', '--titles']
 
         def _probe(rows: list[dict], name: str) -> tuple[int, str]:
             path = tdp / name
@@ -668,7 +672,7 @@ def main() -> None:
          '--input', args.output,
          '--max-gap-days', str(args.max_gap_days),
          '--baseline', args.corpus,
-         '--rubio-coverage'],
+         '--rubio-coverage', '--titles'],
         capture_output=False,
     )
     if result.returncode != 0:
