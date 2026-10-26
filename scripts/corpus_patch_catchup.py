@@ -11,10 +11,14 @@ One hash-changing release instead of several. In order:
      Natural Text  replaced, after the weekly path's cleaning, wherever it differs:
                    the legacy Natural Text of ~120 rows starts at Rubio's first
                    turn and drops the speakers before him ("all speakers", README)
-2. Row fixes (--fixes, data/catchup_fixes_2026_10.csv): Date and Location by
-   Row Id, checked against URL; Speakers Present after enrichment, which would
+2. Row fixes (--fixes, data/catchup_fixes_2026_10.csv): Date, Location, Speech
+   Type and hand-fixed texts by Row Id, checked against URL; Speakers Present after enrichment, which would
    otherwise recompute it; and rows removed as out of scope.
 3. Title repair and lost-sentence restore (corpus_patch_titles.patch_rows).
+3b. The 2026-10-27 whole-corpus audit's text repairs (corpus_audit_repairs:
+   other speakers' turns in SOS Text, stage directions, cut first words, short
+   Natural Text, page chrome, lost characters, doubled paragraphs), and Speakers
+   Present recomputed where the enrichment label fixes change it.
 4. Enrichment of every changed row (word counts, Row Hash, Speakers Present;
    NER for rows whose text changed), then removal and dense renumbering.
 
@@ -34,7 +38,8 @@ import csv
 from collections import Counter
 from pathlib import Path
 
-from corpus_enrich_v1 import enrich_row, enrich_rows_ner, get_nlp, read_csv, write_manifest
+from corpus_audit_repairs import repair_row
+from corpus_enrich_v1 import enrich_row, enrich_rows_ner, get_nlp, read_csv, speakers_present, write_manifest
 from corpus_finalize_v4_30 import (
     normalize_encoding,
     strip_boilerplate,
@@ -48,7 +53,7 @@ csv.field_size_limit(10 ** 9)
 _DATA = Path(__file__).resolve().parent.parent / 'data'
 DEFAULT_FIXES = _DATA / 'catchup_fixes_2026_10.csv'
 REMOVED = '(row removed)'
-HASHED_FIXES = ('Date', 'Location')
+HASHED_FIXES = ('Date', 'Location', 'Speech Type', 'SOS Text', 'Natural Text')
 POST_ENRICH_FIXES = ('Speakers Present',)
 _HEAD = 300
 
@@ -113,9 +118,38 @@ def apply_fixes(rows: list[dict], fixes: list[dict], fields: tuple[str, ...]) ->
         if r.get(fx['field'], '') == fx['value']:
             continue
         audit.append({'Row Id': fx['Row Id'], 'Secretary': r.get('Secretary', ''), 'URL': fx['URL'],
-                      'field': fx['field'], 'old_value': r.get(fx['field'], ''),
-                      'new_value': fx['value'], 'reasons': fx['reason'], 'source': 'fixes'})
+                      'field': fx['field'], 'old_value': r.get(fx['field'], '')[:_HEAD],
+                      'new_value': fx['value'][:_HEAD], 'reasons': fx['reason'], 'source': 'fixes'})
         r[fx['field']] = fx['value']
+    return audit
+
+
+def apply_audit_repairs(rows: list[dict]) -> list[dict]:
+    """corpus_audit_repairs.repair_row on every row (the 2026-10-27 audit)."""
+    audit = []
+    for r in rows:
+        out, fired = repair_row(r)
+        for field, text in out.items():
+            audit.append({'Row Id': r['Row Id'], 'Secretary': r.get('Secretary', ''),
+                          'URL': r.get('URL', ''), 'field': field,
+                          'old_value': (r.get(field) or '')[:_HEAD], 'new_value': text[:_HEAD],
+                          'reasons': '|'.join(fired), 'source': 'corpus_audit_repairs'})
+            r[field] = text
+    return audit
+
+
+def refresh_speakers(rows: list[dict]) -> list[dict]:
+    """Speakers Present recomputed where the enrichment fixes change it (fragment
+    labels, "Sa'Ar" casing, section headings); not hashed, so no Row Hash change."""
+    audit = []
+    for r in rows:
+        new = speakers_present(r.get('Natural Text', ''), r.get('Secretary', ''))
+        if new != r.get('Speakers Present', ''):
+            audit.append({'Row Id': r['Row Id'], 'Secretary': r.get('Secretary', ''),
+                          'URL': r.get('URL', ''), 'field': 'Speakers Present',
+                          'old_value': r.get('Speakers Present', ''), 'new_value': new,
+                          'reasons': 'speaker label fix', 'source': 'corpus_enrich_v1'})
+            r['Speakers Present'] = new
     return audit
 
 
@@ -171,13 +205,16 @@ def main() -> None:
 
     title_audit, title_text_changed = patch_rows(rows, load_overrides(args.overrides))
     audit += title_audit
+    repair_audit = apply_audit_repairs(rows)
+    audit += repair_audit
     by_id = {r['Row Id']: r for r in rows}
-    for rid in pre_title:
+    for rid in pre_title | {a['Row Id'] for a in repair_audit}:
         enrich_row(by_id[rid], incremental=False)
     ner = {id(r): r for r in title_text_changed}
-    ner.update({id(by_id[rid]): by_id[rid] for rid in text_pre})
+    ner.update({id(by_id[rid]): by_id[rid] for rid in text_pre | {a['Row Id'] for a in repair_audit}})
     if ner:
         enrich_rows_ner(list(ner.values()), get_nlp(args.spacy_model), incremental=False)
+    audit += refresh_speakers(rows)
     audit += apply_fixes(rows, fixes, POST_ENRICH_FIXES)
 
     rows, audit = remove_rows(rows, fixes, audit)

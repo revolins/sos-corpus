@@ -266,8 +266,16 @@ _SENTINEL_CANON = {'A PARTICIPANT': 'PARTICIPANT'}
 _NAME_CASE_FIXUP_RE = re.compile(r"\b(Mc|O')([a-z])")
 
 
+# str.title() also capitalises after an apostrophe ("SA'AR" -> "Sa'Ar", "ABC'S" ->
+# "Abc'S"); after two or more letters (not D'Alema, O'Brien) the letter after an
+# apostrophe goes back to lower case, before the
+# Mc-/O' fixup restores O'Brien.
+_AFTER_APOSTROPHE_RE = re.compile(r"(?<=[A-Za-z]{2})(['’])([A-Z])")
+
+
 def _titlecase(s: str) -> str:
-    return _NAME_CASE_FIXUP_RE.sub(lambda m: m.group(1) + m.group(2).upper(), s.title())
+    t = _AFTER_APOSTROPHE_RE.sub(lambda m: m.group(1) + m.group(2).lower(), s.title())
+    return _NAME_CASE_FIXUP_RE.sub(lambda m: m.group(1) + m.group(2).upper(), t)
 
 _HONORIFIC_RE = re.compile(r'^(?:MR|MS|MRS|DR)\.?\s+', re.IGNORECASE)
 _SEC_GENERAL_RE = re.compile(r'^SECRETARY[\s-]+GENERAL\b\s*(.*)$', re.IGNORECASE)
@@ -314,7 +322,18 @@ def _plausible_label(raw_match_text: str) -> bool:
     core = raw_match_text.strip()
     if '\n' in core:
         return False
+    if _SECTION_HEADING_RE.match(core):
+        return False  # "I.  INTRODUCTION:" -- a numbered section of a written text
     return len(core.split()) <= _MAX_LABEL_WORDS
+
+
+# A section heading of a written text ("I. Introduction", "IV. Conclusion").
+_SECTION_HEADING_RE = re.compile(r'^[IVX]{1,4}\.\s')
+# A label whose match ran back over the end of the previous sentence
+# ("... Rumsfeld would tell you. MR. DONALDSON:"): the label is the last sentence.
+_LABEL_AFTER_SENTENCE_RE = re.compile(
+    r'^.*[a-z)][.?!]\s+(?=(?:MR|MS|MRS|DR|SECRETARY|QUESTION|MODERATOR|PRESIDENT|PRIME|'
+    r'FOREIGN|AMBASSADOR|SENATOR|CHAIRMAN|GENERAL|MINISTER)\b)', re.IGNORECASE)
 
 
 def extract_speaker_turns(text: str) -> list[tuple[str, str, int, int]]:
@@ -342,7 +361,8 @@ def extract_speaker_turns(text: str) -> list[tuple[str, str, int, int]]:
         return []
     turns: list[tuple[str, str, int, int]] = []
     for i, m in enumerate(all_labels):
-        label = re.sub(r'[\s|:]+$', '', m.group(0).upper()).strip()
+        label = _LABEL_AFTER_SENTENCE_RE.sub('', m.group(0))
+        label = re.sub(r'[\s|:]+$', '', label.upper()).strip()
         start = m.end()
         end = all_labels[i + 1].start() if i + 1 < len(all_labels) else len(text)
         turns.append((label, text[start:end].strip(' |\n\t'), start, end))

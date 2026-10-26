@@ -61,7 +61,7 @@ csv.field_size_limit(10 ** 8)
 
 # Base columns an audited patch (--allow-changed-rows) may change, and the audit
 # "field" value that marks a row the patch removed (Row Id = its baseline id).
-Q_PATCHABLE_FIELDS = ('SOS Text', 'Natural Text', 'Title', 'Date', 'Location')
+Q_PATCHABLE_FIELDS = ('SOS Text', 'Natural Text', 'Title', 'Date', 'Location', 'Speech Type')
 Q_REMOVED_FIELD = '(row removed)'
 
 EXPECTED_COLUMNS = [
@@ -216,7 +216,7 @@ def main() -> None:
                      help='Audit CSV from a deliberate text patch (columns Row Id, field). '
                           'Check Q then accepts a baseline difference in exactly those '
                           '(Row Id, field) pairs -- and only in SOS Text / Natural Text / Title / '
-                          'Date / Location -- and still fails on any other difference. Rows with '
+                          'Date / Location / Speech Type -- and still fails on any other difference. Rows with '
                           'field "(row removed)" (baseline Row Id) may be missing; the baseline is '
                           'then renumbered without them before comparing.')
     # ── Rubio coverage checks AC-AI (all opt-in; see the block before the date-gap check)
