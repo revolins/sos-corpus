@@ -356,6 +356,43 @@ def test_reextract_refuses_repo_data_dir():
     raise AssertionError('data/ output dir was accepted')
 
 
+def test_reextract_rejoins_inline_seams():
+    """Raw Text puts <sup> ordinals and a bold lead-in's colon on their own lines."""
+    assert rx.rejoin_inline_seams('the 62\nnd\nanniversary') == 'the 62nd anniversary'
+    assert rx.rejoin_inline_seams('our 48\nth\n.') == 'our 48th.'
+    assert rx.rejoin_inline_seams('legislature.\nColombia\n: With this') == 'legislature.\nColombia: With this'
+    assert rx.rejoin_inline_seams('at 10:30 a.m.\n2\nAnd') == 'at 10:30 a.m.\n2\nAnd'
+
+
+def test_reextract_keeps_text_after_transcript_marker(tmp_path):
+    """The Cuba video message (C-01): the Spokesperson's third-person intro is dropped,
+    as the weekly path's gate does, and only the translated transcript is kept."""
+    import pandas as pd
+    url = ('https://www.state.gov/releases/office-of-the-spokesman/2026/05/'
+           'secretary-rubios-message-to-the-cuban-people-on-their-independence-day/')
+    title = 'Secretary Rubio\u2019s Message to the Cuban People on Their Independence Day'
+    raw = '\n'.join([
+        title + ' - United States Department of State', 'Skip to content', 'Home', title,
+        'hide', title, 'Media Note', 'Marco Rubio, Secretary of State', 'May 20, 2026',
+        'Today, Secretary of State Marco Rubio\xa0delivered\xa0a video message to the people '
+        'of Cuba, reaffirming the support of the United States for the Cuban people.',
+        'A courtesy translation of the Secretary\u2019s video message is below.',
+        'Translated Transcript',
+        'On a day like today, in 1902, the Cuban flag flew for the first time over an '
+        'independent country. Today I want to share with you the truth about your suffering.',
+        'Tags', 'Cuba', 'Back to Top', 'Privacy Policy'])
+    pd.DataFrame([{'Row Id': '1', 'Secretary': 'Marco Rubio', 'Title': title,
+                   'Speech Type': 'Remarks', 'URL': url, 'SOS Text': '', 'Raw Text': raw}]
+                 ).to_csv(tmp_path / 'c.csv', index=False)
+    rx.run(rx.argparse.Namespace(corpus=str(tmp_path / 'c.csv'), out_dir=str(tmp_path / 'o'),
+                                 rows=''))
+    t = pd.read_csv(tmp_path / 'o' / 'reextract_texts.csv', dtype=str, keep_default_na=False)
+    sos = t.loc[0, 'SOS Text']
+    assert sos.startswith('On a day like today, in 1902'), sos[:120]
+    assert 'delivered' not in sos and 'Translated Transcript' not in sos
+    assert t.loc[0, 'extraction_mode'].endswith('+after_transcript_marker')
+
+
 if __name__ == '__main__':
     fns = [v for k, v in sorted(globals().items()) if k.startswith('test_') and callable(v)]
     failed = 0

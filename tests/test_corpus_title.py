@@ -273,6 +273,26 @@ def test_restore_written_statement_with_ordinal_seam():
     assert out['SOS Text'].startswith(sentence + 'th anniversary of your independence.\n')
 
 
+def test_restore_two_ordinals_does_not_duplicate_the_clause():
+    """Row 14570: SOS differs from Natural Text, so its head is searched in the
+    restored Natural Text, whose first seam is already rejoined ("66th"). The search
+    must still land on the 66th, not the later "11\\nth\\nanniversary"."""
+    sentence = ('On behalf of the Government of the United States of America, I would like to '
+                'congratulate the Tunisian people on the 66')
+    body = ("th\nanniversary of their nation's independence and the 11\nth\n"
+            'anniversary of the Tunisian revolution.\nThe bonds between our two countries endure.')
+    raw = (f'Tunisia National Day{SUFFIX}\n{CHROME}hide\nTunisia National Day\nPress Statement\n'
+           f'Antony J. Blinken, Secretary of State\nMarch 20, 2022\n{sentence}\n{body}\nTags\n')
+    row = _row(1, 'https://2021-2025.state.gov/tunisia-national-day', 'Tunisia National Day', raw,
+               sos=body.replace('endure.', 'endure. '), nat=body)
+    out, status = ct.restore_row(row, sentence)
+    assert status == {'Natural Text': 'restored', 'SOS Text': 'restored'}
+    want = (sentence + "th anniversary of their nation's independence and the 11\nth\n"
+            'anniversary of the Tunisian revolution.')
+    assert out['SOS Text'].startswith(want), out['SOS Text'][:200]
+    assert out['Natural Text'].startswith(want)
+
+
 def test_restore_interview_keeps_only_the_secretary_turn():
     raw = ('Interview With Zain Verjee of CNN\nU.S. Department of State\nSecretary Condoleezza Rice\n'
            'Washington, DC\nMay 1, 2008\nQUESTION:\nThanks for joining us.\nSECRETARY RICE:\n'

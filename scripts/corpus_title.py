@@ -426,6 +426,10 @@ def _speaker_is_secretary(src: str, pos: int, surname: str) -> bool | None:
 
 def _join(prefix: str, text: str) -> str:
     """prefix + text, rejoining a <sup> ordinal split at the seam ("35\nth\nanniversary")."""
+    if prefix[-1:].isdigit() and re.match(r'(?:st|nd|rd|th)\n', text):
+        # the seam falls between the number and its suffix ("...the 66" + "th\nanniversary")
+        rest = text[3:]
+        text = text[:2] + ('' if rest[:1] in '.,;:)' else ' ') + rest
     out = prefix + text
     n = len(prefix) + 12
     head = _ORDINAL_PUNCT_RE.sub(r'\1\2', out[:n])
@@ -463,7 +467,13 @@ def restore_head(text: str, src: str, title: str, surname: str,
     q = -1
     for head in (body_text[:40], body_text.split('\n', 1)[0][:40], body_text[:20]):
         if len(head.strip()) >= 3:
-            q = src.find(head, start + len(t[:25]))
+            # Whitespace-tolerant: src may be a Natural Text whose seam was already
+            # rejoined ("66th anniversary"), while text still has "th\nanniversary".
+            # An exact match would fall through to the 20-char head and find a
+            # later "11\nth\nanniversary", duplicating the clause between them.
+            m = re.compile(r'\s+'.join(map(re.escape, head.split()))).search(
+                src, start + len(t[:25]))
+            q = m.start() if m else -1
             if q >= 0:
                 break
     if q <= start:
