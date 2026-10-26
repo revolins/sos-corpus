@@ -59,6 +59,11 @@ else:
 
 csv.field_size_limit(10 ** 8)
 
+# Base columns an audited patch (--allow-changed-rows) may change, and the audit
+# "field" value that marks a row the patch removed (Row Id = its baseline id).
+Q_PATCHABLE_FIELDS = ('SOS Text', 'Natural Text', 'Title', 'Date', 'Location')
+Q_REMOVED_FIELD = '(row removed)'
+
 EXPECTED_COLUMNS = [
     'Row Id', 'Secretary', 'Date', 'Title', 'Speech Type',
     'Location', 'URL', 'SOS Text', 'Natural Text', 'Raw Text',
@@ -210,8 +215,10 @@ def main() -> None:
     ap.add_argument('--allow-changed-rows', default=None,
                      help='Audit CSV from a deliberate text patch (columns Row Id, field). '
                           'Check Q then accepts a baseline difference in exactly those '
-                          '(Row Id, field) pairs -- and only in SOS Text / Natural Text / Title -- '
-                          'and still fails on any other difference.')
+                          '(Row Id, field) pairs -- and only in SOS Text / Natural Text / Title / '
+                          'Date / Location -- and still fails on any other difference. Rows with '
+                          'field "(row removed)" (baseline Row Id) may be missing; the baseline is '
+                          'then renumbered without them before comparing.')
     # ── Rubio coverage checks AC-AI (all opt-in; see the block before the date-gap check)
     ap.add_argument('--rubio-coverage', action='store_true',
                      help='Run the Rubio row checks AD (turn recall), AE (foreign leak / inline '
@@ -520,14 +527,31 @@ def main() -> None:
     # Skipped (not failed) entirely when --baseline is not provided.
     if args.baseline:
         with open(args.baseline, newline='', encoding='utf-8') as f:
-            baseline_rows = {r.get('Row Id'): r for r in csv.DictReader(f)}
+            baseline_list = list(csv.DictReader(f))
         current_ids = {r.get('Row Id') for r in rows}
         allowed: set[tuple[str, str]] = set()
+        removed: set[str] = set()
         if args.allow_changed_rows:
             with open(args.allow_changed_rows, newline='', encoding='utf-8') as f:
                 for a in csv.DictReader(f):
-                    if a.get('field') in ('SOS Text', 'Natural Text', 'Title'):
+                    if a.get('field') in Q_PATCHABLE_FIELDS:
                         allowed.add((str(a['Row Id']), a['field']))
+                    elif a.get('field') == Q_REMOVED_FIELD:
+                        removed.add(str(a['Row Id']))
+        if removed:
+            # A patch that removes rows renumbers the rest densely (Row Id check
+            # above), so compare against the baseline with the same rows removed
+            # and the same renumbering. Removed ids are baseline Row Ids; every
+            # other audit Row Id is the patched output's.
+            missing = removed - {b.get('Row Id') for b in baseline_list}
+            if missing:
+                fail(f'Check Q: --allow-changed-rows removes Row Id(s) not in --baseline: {sorted(missing)[:5]}')
+            kept = [b for b in baseline_list if b.get('Row Id') not in removed]
+            for i, b in enumerate(kept):
+                b['Row Id'] = str(i)
+            ok(f'Check Q: {len(removed)} row(s) removed by the audited patch, baseline renumbered to match')
+            baseline_list = kept
+        baseline_rows = {r.get('Row Id'): r for r in baseline_list}
         q_mismatches = []
         q_allowed = set()
         for r in rows:

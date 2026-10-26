@@ -6,6 +6,7 @@ data/*
 !data/rubio_supplemental_urls.txt
 !data/rubio_coverage_exclusions.csv
 !data/title_overrides.csv
+!data/catchup_fixes_2026_10.csv
 !data/rubio_gt_classified.csv
 # Small offline test fixtures (CSV ones included) must ship with the repo.
 !tests/fixtures/**/*.csv
