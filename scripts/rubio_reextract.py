@@ -48,6 +48,7 @@ import pandas as pd
 import rubio_turns
 from rubio_backfill import (
     _END_MARK_RE,
+    _active_speaker_decision,
     _apply_footnote_errata,
     _rubio_content_block,
     extract_row,
@@ -79,6 +80,21 @@ _DIFF_COLUMNS = [
     'lost_words', 'gained_words', 'untranscribed_rubio_segments',
     'changed', 'accepted', 'hand_review',
 ]
+
+
+# Stored Raw Text is get_text('\n'), so inline elements land on lines of their own:
+# a <sup> ordinal ("62\nnd\nanniversary") and a bold lead-in before its colon
+# ("Colombia\n: With this action"). The weekly path reads the live HTML and never
+# sees these; re-extraction from Raw Text has to rejoin them.
+_ORDINAL_PUNCT_RE = re.compile(r'(\d)\n(st|nd|rd|th)\n(?=[.,;:!?)\]])')
+_ORDINAL_SEAM_RE = re.compile(r'(\d)\n(st|nd|rd|th)\b[ \t]*\n?')
+_COLON_SEAM_RE = re.compile(r'(\S)\n:(?=\s)')
+
+
+def rejoin_inline_seams(text: str) -> str:
+    t = _ORDINAL_PUNCT_RE.sub(r'\1\2', text or '')
+    t = _ORDINAL_SEAM_RE.sub(lambda m: m.group(1) + m.group(2) + ' ', t)
+    return _COLON_SEAM_RE.sub(r'\1:', t)
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +146,7 @@ def reference(raw: str) -> tuple[str, str, int]:
     if not block.strip():
         return '', '', 0
     block, _ = _apply_footnote_errata(block)
-    block = _END_MARK_RE.sub('', block).rstrip()
+    block = rejoin_inline_seams(_END_MARK_RE.sub('', block).rstrip())
     turns = rubio_turns.segment(block)
     mine = [t.text for t in turns if t.label is not None and t.is_rubio]
     other = [t.text for t in turns if t.label is not None and not t.is_rubio]
@@ -188,7 +204,15 @@ def run(args: argparse.Namespace) -> int:
             print(f'{rid}: extract_row returned None', file=log)
             ex = {'speech_text': '', 'speaker_text': '', 'extraction_mode': 'skipped',
                   'untranscribed_rubio_segments': 0}
-        new_text = clean_sos_text(ex['speech_text'], rec['Title'])
+        # The weekly path's third-person gate: under a third-person intro with a
+        # transcript marker (the Cuba video message), his text is what follows it.
+        _, _, after = _active_speaker_decision(
+            url, ex['speech_text'], ex.get('speaker_text') or ex['speech_text'],
+            int('rubio_turns' in ex['extraction_mode']))
+        if after:
+            ex['speech_text'] = after
+            ex['extraction_mode'] += '+after_transcript_marker'
+        new_text = rejoin_inline_seams(clean_sos_text(ex['speech_text'], rec['Title']))
         old_text = rec['SOS Text']
 
         rubio_ref, foreign_ref, n_rt = reference(raw)
@@ -218,7 +242,7 @@ def run(args: argparse.Namespace) -> int:
             'hand_review': int(rid in HAND_REVIEW),
         })
         text_rows.append({
-            'Row Id': rid, 'SOS Text': new_text, 'Natural Text': ex['speaker_text'],
+            'Row Id': rid, 'SOS Text': new_text, 'Natural Text': rejoin_inline_seams(ex['speaker_text']),
             'extraction_mode': ex['extraction_mode'],
             'Untranscribed Rubio Segments': ex['untranscribed_rubio_segments'],
         })
