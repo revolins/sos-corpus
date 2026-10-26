@@ -122,10 +122,11 @@ _RELEASE_SITEMAP_PREFIXES = (
     'state_briefing-sitemap',
     'state_ext_content-sitemap',
 )
-# Release-sitemap candidates are unfiltered (~1.2k press releases a month, nearly
-# all by other people), so at most this many are fetched per run until the
-# ground-truth crawl sizes the real need. The rest are logged and retried.
-_SITEMAP_FETCH_CAP = 50
+# Release-sitemap and flat-page candidates are unfiltered (~1.2k press releases a
+# month, nearly all by other people), so at most this many are fetched per run.
+# The rest are logged and retried. Raised from 50 on 2026-10-26: 50 left ~300
+# release candidates unfetched every week.
+_SITEMAP_FETCH_CAP = 150
 # Floor slack below the latest corpus Date (was 14; audit D-04).
 _FLOOR_BUFFER_DAYS = 60
 # A pending URL that has failed in this many runs is "stuck" (issue opened in CI).
