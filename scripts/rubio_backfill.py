@@ -122,10 +122,11 @@ _RELEASE_SITEMAP_PREFIXES = (
     'state_briefing-sitemap',
     'state_ext_content-sitemap',
 )
-# Release-sitemap candidates are unfiltered (~1.2k press releases a month, nearly
-# all by other people), so at most this many are fetched per run until the
-# ground-truth crawl sizes the real need. The rest are logged and retried.
-_SITEMAP_FETCH_CAP = 50
+# Release-sitemap and flat-page candidates are unfiltered (~1.2k press releases a
+# month, nearly all by other people), so at most this many are fetched per run.
+# The rest are logged and retried. Raised from 50 on 2026-10-26: 50 left ~300
+# release candidates unfetched every week.
+_SITEMAP_FETCH_CAP = 150
 # Floor slack below the latest corpus Date (was 14; audit D-04).
 _FLOOR_BUFFER_DAYS = 60
 # A pending URL that has failed in this many runs is "stuck" (issue opened in CI).
@@ -260,6 +261,15 @@ _SPOKES_BYLINE_RE = re.compile(r'\bSpokes(?:person|man)\b', re.IGNORECASE)
 # "Joint Statement by Secretary of State Marco Rubio and ..." /
 # "...(WHO): Joint Statement by Secretary of State Rubio and Secretary ... Kennedy"
 _JOINT_TITLE_RE = re.compile(r'Joint Statement (?:by|from|of)\b[^:]*\bRubio\b', re.IGNORECASE)
+# A joint statement Rubio releases personally, named in the opening line rather
+# than the title: "The text of the following statement was released by Secretary
+# of State Marco Rubio, Secretary of Commerce ..." (2025-08-12 IMO) or "Joint
+# Statement by Secretary of State Marco Rubio, United States Trade Representative
+# ..." (2025-10-16 U.S.-Brazil). Statements "released by the Governments of ..."
+# do not match: those are government-to-government, not his voice.
+_JOINT_RELEASED_RE = re.compile(
+    r'(?:statement (?:was|is) (?:released|issued) by|Joint Statement by)\s+'
+    r'(?:U\.S\.\s+)?Secretary of State Marco Rubio\b', re.IGNORECASE)
 
 # Sitemap XML namespace
 _SITEMAP_NS = '{http://www.sitemaps.org/schemas/sitemap/0.9}'
@@ -398,6 +408,24 @@ def _is_false_positive_url(url: str) -> bool:
     return False
 
 
+# Sitemap-only sources: unfiltered by slug, capped per run, and remembered once
+# classified out (discovery state) so the cap rotates through the backlog.
+_CAPPED_SOURCES = frozenset({'sitemap_release', 'sitemap_flat'})
+# Flat slugs that are navigation/topic pages, never a release.
+_NON_ITEM_PREFIXES = ('bureau', 'office-', 'countries-areas', 'policy-issues', 'about',
+                      'biographies', 'remarks-secretary-', 'releases', 'translations',
+                      'u-s-relations-with', 'u-s-embassy', 'embassy-', 'consulate-')
+
+
+def _is_flat_item_url(url: str) -> bool:
+    """https://www.state.gov/<one-long-slug>/ that reads like a release, not a
+    navigation or topic page (>= 3 hyphens -- "responding-to-panama-earthquake" --
+    and not a bureau/office/country page)."""
+    parts = [p for p in urlsplit(url).path.split('/') if p]
+    return (len(parts) == 1 and parts[0].count('-') >= 3
+            and not parts[0].lower().startswith(_NON_ITEM_PREFIXES))
+
+
 def _is_rubio_speech_url(url: str) -> bool:
     """True if the URL is a Rubio active-speaker page (not a readout/advisory).
 
@@ -518,12 +546,15 @@ def load_existing_urls(enriched_path: Path,
 class Candidate(NamedTuple):
     """A URL to consider, and where it came from."""
     url: str
-    # archive | sitemap_page | sitemap_release | supplemental | held | pending
+    # archive | sitemap_page | sitemap_flat | sitemap_release | supplemental | held | pending
     source: str
     listing_date: str = ''    # ISO date the archive listing showed, if any
     # For a re-fed pending URL: the source that first found it. Decides whether
     # a page with no byline may be kept (see _TRUSTED_SOURCES).
     origin: str = ''
+    # Sitemap <lastmod> (ISO) for undated sitemap_flat pages: fetch-order only,
+    # never a Date (it is the edit date).
+    lastmod: str = ''
 
 
 def _parse_lastmod(text: str) -> date | None:
@@ -589,7 +620,7 @@ def discover_sitemap_urls(session: requests.Session, rate_limit: float,
     """
     stats = stats if stats is not None else {}
     stats.update(sitemaps_read=0, sitemaps_failed=[], sitemaps_old=0, sitemaps_budget_skipped=0,
-                 sitemap_page_hits=0, sitemap_release_hits=0)
+                 sitemap_page_hits=0, sitemap_flat_hits=0, sitemap_release_hits=0)
     candidates: list[Candidate] = []
     deadline = time.monotonic() + budget_min * 60 if budget_min else None
 
@@ -653,6 +684,16 @@ def discover_sitemap_urls(session: requests.Session, rate_limit: float,
                 if _is_rubio_speech_url(loc):
                     candidates.append(Candidate(loc, 'sitemap_page'))
                     stats['sitemap_page_hits'] += 1
+                    found_in_this += 1
+                elif (lastmod and _is_flat_item_url(loc)
+                      and not any(pat in loc.lower() for pat in _NON_SPEAKER_URL_PATS)):
+                    # Undated flat page edited inside the window, no 'rubio' in
+                    # the slug: /responding-to-panama-earthquake/ is a 2026-10-09
+                    # Rubio press statement that neither the archive nor the
+                    # 'rubio' filter ever surfaced. Classified after fetch (needs
+                    # a Rubio byline or labels) and capped like release sitemaps.
+                    candidates.append(Candidate(loc, 'sitemap_flat', lastmod=lastmod.isoformat()))
+                    stats['sitemap_flat_hits'] += 1
                     found_in_this += 1
             else:
                 if not _in_floor_window(loc, lastmod, since):
@@ -1095,6 +1136,7 @@ def collect_candidate_urls(
 
     print(f'[rubio_backfill] discovery: {len(archive)} from the remarks archive, '
           f'{len(sitemap)} from sitemaps ({sm_stats.get("sitemap_page_hits", 0)} page, '
+          f'{sm_stats.get("sitemap_flat_hits", 0)} flat, '
           f'{sm_stats.get("sitemap_release_hits", 0)} release), '
           f'{len(supplemental) + len(extra)} supplemental/pending/held')
     return _dedup_candidates(archive + supplemental + list(extra) + sitemap)
@@ -1537,7 +1579,7 @@ class PageDecision(NamedTuple):
 
 
 def _byline_decision(block_meta: dict, title: str, n_rubio_turns: int,
-                     trusted: bool = True) -> tuple[bool, str, bool]:
+                     trusted: bool = True, text: str = '') -> tuple[bool, str, bool]:
     """(keep, reason, joint) from the block byline lines (audit C-02).
 
     Keep when a byline names Rubio, when the block has Rubio speaker labels, or for
@@ -1556,7 +1598,8 @@ def _byline_decision(block_meta: dict, title: str, n_rubio_turns: int,
     title = block_meta.get('block_title') or title or ''
     rubio_by = any('Rubio' in b for b in bylines)
     others = [b for b in bylines if 'Rubio' not in b and not _SPOKES_BYLINE_RE.search(b)]
-    joint_title = bool(_JOINT_TITLE_RE.search(title))
+    joint_title = (bool(_JOINT_TITLE_RE.search(title))
+                   or bool(_JOINT_RELEASED_RE.search((text or '')[:600])))
     is_statement = 'statement' in btype or 'joint statement' in title.lower()
     joint = (rubio_by and bool(others) and is_statement) or joint_title
     if rubio_by:
@@ -1617,7 +1660,7 @@ def classify_rubio_page(url: str, page: dict, block_meta: dict, extracted: dict,
     if not keep:
         return PageDecision(False, reason, '', '', labels)
     by_keep, by_reason, joint = _byline_decision(block_meta, page.get('title', ''), n_turns,
-                                                 trusted)
+                                                 trusted, text=block)
     # A transcript marker under a third-person intro is evidence on its own (a
     # Spokesperson-bylined video message would still be his words).
     if not by_keep and 'marker' not in reason:
@@ -2213,6 +2256,8 @@ def _sitemap_priority(c: "Candidate") -> tuple:
     low = c.url.lower()
     readout = any(p in low for p in _NON_SPEAKER_URL_PATS) or 'readout' in low
     ym = url_year_month(c.url)
+    if ym is None and c.lastmod:          # undated flat page: its edit month
+        ym = (int(c.lastmod[:4]), int(c.lastmod[5:7]))
     return (readout, 'rubio' not in low, -(ym[0] * 100 + ym[1]) if ym else 0)
 
 
@@ -2356,7 +2401,7 @@ def run(args: argparse.Namespace) -> None:
                         text=exclusions.url_keys[key])
             resolved.add(key)
             continue
-        if c.source == 'sitemap_release' and key in classified:
+        if c.source in _CAPPED_SOURCES and key in classified:
             known_sitemap += 1      # fetched and classified out in an earlier run
             continue
         new_cands.append(c)
@@ -2374,12 +2419,12 @@ def run(args: argparse.Namespace) -> None:
     # ~1.2k URLs, nearly all by other people. The cap rotates through the
     # backlog because anything fetched and classified out is remembered above.
     cap = int(getattr(args, 'sitemap_fetch_cap', _SITEMAP_FETCH_CAP))
-    sm = sorted((c for c in new_cands if c.source == 'sitemap_release'), key=_sitemap_priority)
+    sm = sorted((c for c in new_cands if c.source in _CAPPED_SOURCES), key=_sitemap_priority)
     if cap >= 0 and len(sm) > cap:
         dropped = sm[cap:]
         keep_keys = {_live_key(c.url) for c in sm[:cap]}
         new_cands = [c for c in new_cands
-                     if c.source != 'sitemap_release' or _live_key(c.url) in keep_keys]
+                     if c.source not in _CAPPED_SOURCES or _live_key(c.url) in keep_keys]
         for c in dropped:
             skiplog.add(c.url, 'sitemap_fetch_cap', 'prefetch')
         print(f'[rubio_backfill] WARNING: --sitemap-fetch-cap {cap}: {len(dropped):,} sitemap '
@@ -2413,7 +2458,7 @@ def run(args: argparse.Namespace) -> None:
         skiplog.add(c.url, reason, stage, block_type=bm.get('block_speech_type', ''),
                     byline=bm.get('block_byline', ''),
                     title=(page or {}).get('title', ''), text=text, labels=labels)
-        if c.source == 'sitemap_release' and stage in ('classify', 'extract', 'post_fetch'):
+        if c.source in _CAPPED_SOURCES and stage in ('classify', 'extract', 'post_fetch'):
             classified[_live_key(c.url)] = {'reason': reason, 'date': today}
 
     for i, c in enumerate(new_cands, 1):
