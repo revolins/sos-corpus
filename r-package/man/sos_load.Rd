@@ -4,10 +4,26 @@
 \alias{sos_load}
 \title{Load the US Secretary of State speech corpus}
 \usage{
-sos_load(years = NULL)
+sos_load(
+  years = NULL,
+  version = "latest",
+  path = NULL,
+  cache_dir = NULL,
+  refresh = FALSE
+)
 }
 \arguments{
-\item{years}{Optional integer vector of years to load. Default loads all.}
+\item{years}{Optional integer vector of years to keep. Default keeps all.}
+
+\item{version}{Release tag, e.g. \code{"v2026.10.27"}, or \code{"latest"}.}
+
+\item{path}{Optional path to a local corpus CSV; when given, nothing is
+downloaded or cached.}
+
+\item{cache_dir}{Directory for cached releases. Defaults to
+\code{tools::R_user_dir("sosspeech", "cache")}.}
+
+\item{refresh}{If \code{TRUE}, download the release again even if it is cached.}
 }
 \value{
 A data frame with one row per speech and columns \code{row_id},
@@ -16,15 +32,19 @@ A data frame with one row per speech and columns \code{row_id},
 \code{natural_word_count}, \code{row_hash}, \code{speakers_present},
 \code{people_mentioned_natural}, \code{people_mentioned_sos},
 \code{countries_mentioned}, \code{country_iso_codes_mentioned}, \code{canonical_url}.
+The release tag is stored in \code{attr(x, "release")}.
 }
 \description{
-The corpus is stored in the package as compressed \code{.rds} shards (one per
-year, split further if a year is large) under \code{inst/extdata}. This function
-reads and row-binds them.
+Downloads a corpus release from GitHub (by default the latest, which the
+weekly update keeps current) and returns it as a data frame. The first call
+for a release downloads the CSV (about 480 MB) and caches it as a compressed
+\code{.rds} file; later calls read the cache. Without a network connection the
+newest cached release is used.
 }
 \examples{
 \dontrun{
 x <- sos_load()
 x_2010 <- sos_load(years = 2010)
+x_fixed <- sos_load(version = "v2026.10.27")   # a fixed release, for replication
 }
 }

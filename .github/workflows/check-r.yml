@@ -39,7 +39,9 @@ jobs:
         run: |
           library(sosspeech)
           x <- sos_load()
-          cat("rows:", nrow(x), " cols:", ncol(x), "\n")
+          cat("release:", attr(x, "release"), " rows:", nrow(x), " cols:", ncol(x), "\n")
+          latest <- jsonlite::fromJSON("https://api.github.com/repos/${{ github.repository }}/releases/latest")$tag_name
+          stopifnot(identical(attr(x, "release"), latest))   # the package serves the current release
           stopifnot(is.data.frame(x), nrow(x) > 17000, ncol(x) == 19,
                     inherits(x$date, "Date"), !anyDuplicated(x$row_hash))
           y <- sos_load(years = 2020)
