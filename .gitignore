@@ -2,6 +2,8 @@
 # data/* (not data/) so the negations below can re-include the checked-in
 # inputs CI reads; everything else under data/ is a run artifact.
 *.csv
+# R package test fixtures are tiny hand-made CSVs, not corpus data
+!r-package/tests/testthat/fixtures/*.csv
 data/*
 !data/rubio_supplemental_urls.txt
 !data/rubio_coverage_exclusions.csv
