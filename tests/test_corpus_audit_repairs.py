@@ -227,3 +227,39 @@ def test_foreign_removal_never_empties_a_row():
     nat = 'QUESTION: Secretary Kerry, is there any more news on Syria today and tomorrow?'
     sos = ', is there any more news on Syria today and tomorrow?'
     assert ar.remove_foreign_paragraphs(sos, nat, 'Kerry') == sos
+
+
+def test_verifier_audit_checks(tmp_path):
+    """Checks AK (text a repair would still change) and AL (non-person People Mentioned):
+    a new row FAILs, the same row unchanged since --baseline is skipped, and
+    --strict-audit-checks checks it anyway."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from test_corpus_title import _verify, _write, _COLS
+    import csv as _csv
+    cols = _COLS + ['People Mentioned (Natural Text)', 'People Mentioned (SOS Text)']
+    raw = ('Remarks\nQUESTION: Secretary Kerry, is there any more news on Syria today?\n'
+           'SECRETARY KERRY: The basic ceasefire is holding, but it is fragile.\n')
+    row = {'Row Id': '0', 'Secretary': 'Kerry', 'Date': '2016-01-01', 'Title': 'Remarks',
+           'Speech Type': 'Remarks', 'Location': 'Washington, D.C.', 'URL': 'https://x/1',
+           'SOS Text': ', is there any more news on Syria today?\n\nThe basic ceasefire is holding, but it is fragile.',
+           'Natural Text': raw.split('\n', 1)[1].strip(), 'Raw Text': raw,
+           'People Mentioned (Natural Text)': 'Quartet', 'People Mentioned (SOS Text)': ''}
+
+    def write(path, rows):
+        with open(path, 'w', newline='', encoding='utf-8') as f:
+            w = _csv.DictWriter(f, fieldnames=cols)
+            w.writeheader()
+            w.writerows(rows)
+        return path
+    bad = write(tmp_path / 'bad.csv', [row])
+    rc, out = _verify('--input', bad, '--audit-checks')
+    assert rc == 1 and 'FAIL  Check AK' in out and 'FAIL  Check AL' in out, out
+    rc, out = _verify('--input', bad, '--audit-checks', '--baseline', bad)
+    assert 'ok    Check AK' in out and 'skipped' in out, out
+    rc, out = _verify('--input', bad, '--strict-audit-checks', '--baseline', bad)
+    assert 'FAIL  Check AK' in out, out
+    good = write(tmp_path / 'good.csv', [dict(row, **{
+        'SOS Text': 'The basic ceasefire is holding, but it is fragile.',
+        'People Mentioned (Natural Text)': ''})])
+    rc, out = _verify('--input', good, '--audit-checks')
+    assert 'ok    Check AK' in out and 'ok    Check AL' in out, out

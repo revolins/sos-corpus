@@ -353,11 +353,13 @@ def gate_new_rows(new_rows: list[dict], verifier: Path,
     with tempfile.TemporaryDirectory(prefix='rubio_gate_') as td:
         tdp = Path(td)
         # --rubio-coverage adds the row-local AD-AG checks (turn recall, other
-        # speakers' words, byline, mid-word start). With no --baseline every
+        # speakers' words, byline, mid-word start); --audit-checks adds AK-AL (the
+        # 2026-10-27 audit's detectors: text a repair would still change, People
+        # Mentioned values that are not people). With no --baseline every
         # probe row counts as new, so a FAIL holds the row.
         extra = ['--max-gap-days', str(10 ** 7),
                  '--manifest-path', str(tdp / 'no_manifest.json'),
-                 '--rubio-coverage', '--titles']
+                 '--rubio-coverage', '--titles', '--audit-checks']
 
         def _probe(rows: list[dict], name: str) -> tuple[int, str]:
             path = tdp / name
@@ -672,7 +674,7 @@ def main() -> None:
          '--input', args.output,
          '--max-gap-days', str(args.max_gap_days),
          '--baseline', args.corpus,
-         '--rubio-coverage', '--titles'],
+         '--rubio-coverage', '--titles', '--audit-checks'],
         capture_output=False,
     )
     if result.returncode != 0:

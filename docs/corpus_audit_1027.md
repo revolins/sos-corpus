@@ -81,6 +81,30 @@ Bugs in the repairs themselves were found by re-running the audit on its own out
 
 The 53 lower-case starts and the 11 punctuation starts are the page's own text. They are transcripts that begin "(In progress)" or "(Inaudible)", or paragraphs whose preceding hyperlinked word was lost at the source. Recurring phrases are diplomatic formulae; none is site chrome.
 
+## The audit as verifier checks (AK-AM)
+
+`corpus_verify_research_grade.py --audit-checks` (`--strict-audit-checks` for every row) turns the audit into checks:
+
+| Check | Rule | Severity |
+|---|---|---|
+| **AK** | A repair in `corpus_audit_repairs` would still change the row: another speaker's turn or a vocative question in SOS Text, a lost opening or first word, a missed stage direction, page chrome, lost characters, Natural Text not covering SOS Text. Also fails SOS Text that is mostly not on its own page. | FAIL |
+| **AL** | A People Mentioned value that is not a person (`corpus_enrich_v1.is_not_a_person`) | FAIL |
+| **AM** | SOS Text vocabulary is an outlier for its length (Heaps' law, \|z\| >= 4) | Warning only: an outlier is a lead, not an error |
+
+The repairs serve as the detectors, so a check and its fix cannot drift apart. Running AK strictly over the repaired corpus also tests that the repairs are idempotent.
+
+**Where they run:**
+- The weekly job (`corpus_rubio_update.py`) passes `--audit-checks` to both the per-row gate and the full verifier. A new row that fails AK or AL is held, not published.
+- Without `--strict-audit-checks`, rows unchanged since `--baseline` are skipped. AK costs about 0.07 s a row.
+
+**Checked before wiring it in:** all 24 rows the weekly job added in v2026.10.26 pass AK and AL.
+
+**What its first strict run found.** It caught 65 candidate rows that the repairs would still change, now fixed:
+- A garble fix that was not anchored had doubled "Secretary Albright" in 684.
+- A stray "." joined into "..".
+- A reporter's question under a label split over lines with a note ("QUESTION\n(unofficial translation from Czech)") in 975 and 3077.
+- A paragraph tidy (`tidy_paragraph_starts`) that had been added after that run began.
+
 ## Rows removed
 
 All renumber the rows after them (Check Q accepts the audited removals).

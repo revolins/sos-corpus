@@ -182,6 +182,40 @@ def remove_inline_other_turns(sos: str, natural: str, secretary: str) -> str:
 _LINE_START_LABEL_RE = re.compile(r"(?m)^\s*([A-Z][A-Z .'’\-]{1,60}?)\s*(?:\([^()\n]{0,30}\)\s*)?:")
 
 
+_SPLIT_NOTE_LABEL_RE = re.compile(r"(?m)^([A-Z][A-Z .'’\-]{1,60}?)[ \t]*\n\([ \t]*\n?([^()\n]{0,60}?)[ \t]*\n?\)?[ \t]*\n:")
+
+
+def join_split_labels(natural: str) -> str:
+    """"QUESTION\n(\nunofficial translation from Czech\n: What is ..." -> "QUESTION
+    (unofficial translation from Czech): What is ...", so the label is found."""
+    return _SPLIT_NOTE_LABEL_RE.sub(lambda m: f'{m.group(1)} ({m.group(2).strip()}):', natural)
+
+
+_SPLIT_NOTE_LABEL2_RE = re.compile(
+    r"(?m)^([A-Z][A-Z .'’\-]{1,60}?)[ \t]*\n\([ \t]*\n?([^()\n]{0,60}?)[ \t]*\n?\)[ \t]*\n?(?::[ \t]*)?")
+_BARE_LABEL_LINE_RE = re.compile(r"(?m)^([A-Z][A-Z .'’\-]{2,60}?)[ \t]*(?:\n\(|:?[ \t]*$)")
+
+
+def sos_from_labelled_natural(sos: str, natural: str, secretary: str) -> str | None:
+    """SOS Text that still shows another speaker's label line ("QUESTION\n(unofficial
+    translation from Czech)\nMr. President Putin ..."; rows 975, 3077): rebuild it as
+    the Secretary's turns of Natural Text, with labels split over lines joined first."""
+    if _rt is None:
+        return None
+    labs = [m.group(1).strip() for m in _BARE_LABEL_LINE_RE.finditer(sos)]
+    if not any(len(x.split()) <= 6 and not is_secretary_label(x, secretary) and
+               (x in _ROLE_WORDS or len(x.split()) >= 2) for x in labs):
+        return None
+    joined = _SPLIT_NOTE_LABEL2_RE.sub(lambda m: f'{m.group(1)} ({m.group(2).strip()}):', natural)
+    joined = re.sub(r'(?m)^(QUESTION|MODERATOR|PARTICIPANT|AUDIENCE)[ \t]*$', r'\1:', joined)
+    turns = _rt.segment(joined, stop_at_footer=False)
+    mine = [t.text.strip() for t in turns if t.label and is_secretary_label(t.label, secretary)]
+    new = '\n\n'.join(x for x in mine if x)
+    if not new or len(new.split()) < 0.3 * len(sos.split()):
+        return None
+    return new
+
+
 def remove_foreign_paragraphs(sos: str, natural: str, secretary: str) -> str:
     """Third pass for other speakers' words: an SOS paragraph that Natural Text puts
     inside another speaker's turn. The old extraction took a vocative ("QUESTION:
@@ -305,15 +339,6 @@ def drop_vocative_remainders(sos: str, natural: str, secretary: str, raw: str = 
     text = re.sub(r'\n{3,}', '\n\n', ''.join(out))
     text = re.sub(r'^(?:\s*\n)+|(?:\n\s*)+$', '', text)
     return text if text.strip() else sos
-
-
-def strip_stray_punctuation(text: str) -> str:
-    """A paragraph that opens with the ":" of a label split over lines ("SECRETARY
-    ALBRIGHT\n: I depart ...") or the ")" of a broken note ("(As Delivered\n) Thank
-    you"), and lines that are only ":"."""
-    out = re.sub(r'(?m)^[ \t]*:[ \t]*\n', '', text)
-    out = re.sub(r'(?m)^([ \t]*)[:)][ \t]*(?=\S)', r'\1', out)
-    return out if out != text else text
 
 
 _STAGE_WORDS = r'(?:laughter|applause|cheers|cheering|crosstalk)'
@@ -555,7 +580,8 @@ def tidy_paragraph_starts(text: str) -> str:
     Thank you" leaves ": Thank you"), the ")" of a half-stripped "(As Delivered)", and a
     paragraph break the page puts before a comma at a hyperlink ("pursuant to Executive
     Order 14098\n\n, which authorizes"), where the sentence runs on."""
-    out = re.sub(r'\s*\n\s*\n\s*(?=[,;.](?:\s|$))', '', text)
+    out = re.sub(r'(?<=[.?!])\s*\n\s*\n\s*\.(?=\s|$)', '', text)       # "home.\n\n. Thank" -> "home. Thank"
+    out = re.sub(r'\s*\n\s*\n\s*(?=[,;.](?:\s|$))', '', out)
     out = re.sub(r'(^|\n\s*\n)[ \t]*[:)][ \t]*', r'\1', out)
     return out.lstrip() if out != text else text
 
@@ -603,15 +629,18 @@ def dedupe_paragraphs(text: str, raw: str) -> str:
 # Text the original scrape garbled in one row (3778: the "Q" of "Quartet" and
 # "al-Qaeda" turned into a fake QUESTION label).
 _KNOWN_GARBLES = {'theQUESTION: uartet': 'the Quartet', 'alQUESTION: aeda': 'al-Qaeda',
-                  # 684: the joint statement's subject was taken for a speaker label
-                  ', Estonian President Meri, Latvian President Ulmanis, and Lithuanian President Adamkus':
-                  'Secretary Albright, Estonian President Meri, Latvian President Ulmanis, and Lithuanian '
-                  'President Adamkus'}
+}
+# 684: the joint statement's subject was taken for a speaker label; only a text or
+# paragraph that opens with the comma lost it.
+_KNOWN_GARBLE_RES = ((re.compile(r'(?:^|(?<=\n\n))\s*, (?=Estonian President Meri, Latvian President Ulmanis)'),
+                      'Secretary Albright, '),)
 
 
 def _fix_garbles(text: str) -> str:
     for bad, good in _KNOWN_GARBLES.items():
         text = text.replace(bad, good)
+    for pat, good in _KNOWN_GARBLE_RES:
+        text = pat.sub(good, text)
     return text
 
 
@@ -643,12 +672,16 @@ def repair_row(row: dict) -> tuple[dict, list[str]]:
     step('page_chrome', strip_chrome(sos), strip_chrome(nat))
     step('paragraph_starts', tidy_paragraph_starts(sos), tidy_paragraph_starts(nat))
     if sos != nat:  # a transcript: SOS Text is the Secretary's turns only
-        step('other_speaker_turns', remove_other_turns(sos, nat, sec))
-        step('other_speaker_turns', remove_inline_other_turns(sos, nat, sec))
-        step('other_speaker_turns', remove_foreign_paragraphs(sos, nat, sec))
-        step('other_speaker_turns', remove_foreign_paragraphs(sos, nat, sec))
-        step('vocative_remainder', drop_vocative_remainders(sos, nat, sec, raw))
-        step('stray_punctuation', strip_stray_punctuation(sos))
+        rebuilt = sos_from_labelled_natural(sos, nat, sec)
+        if rebuilt is not None:
+            from corpus_finalize_v4_30 import strip_stage_directions
+            step('other_speaker_turns', strip_stage_directions(rebuilt))
+        nat_l = join_split_labels(nat)
+        step('other_speaker_turns', remove_other_turns(sos, nat_l, sec))
+        step('other_speaker_turns', remove_inline_other_turns(sos, nat_l, sec))
+        step('other_speaker_turns', remove_foreign_paragraphs(sos, nat_l, sec))
+        step('other_speaker_turns', remove_foreign_paragraphs(sos, nat_l, sec))
+        step('vocative_remainder', drop_vocative_remainders(sos, nat_l, sec, join_split_labels(raw)))
     step('stage_directions', strip_combined_stage(sos))
     step('cut_start', restore_cut_start(sos, raw) or restore_cut_start(sos, nat),
          restore_cut_start(nat, raw))
@@ -671,3 +704,19 @@ def repair_row(row: dict) -> tuple[dict, list[str]]:
     if nat != nat0:
         out['Natural Text'] = nat
     return out, fired
+
+
+# ---------------------------------------------------------------------------
+# Verifier detectors (corpus_verify_research_grade Checks AK-AM)
+# ---------------------------------------------------------------------------
+
+def text_problems(row: dict) -> list[str]:
+    """Why this row's text is not clean, by the same rules that repair it: the
+    repairs repair_row would still make, plus SOS Text that is mostly not on the
+    row's own page. [] for a clean row."""
+    _, fired = repair_row(row)
+    problems = sorted(set(fired))
+    sos = row.get('SOS Text', '') or ''
+    if len(sos.split()) > 30 and coverage(sos, normalize_encoding(row.get('Raw Text', '') or '')) < 0.5:
+        problems.append('sos_not_on_page')
+    return problems
