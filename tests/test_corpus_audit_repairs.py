@@ -263,3 +263,12 @@ def test_verifier_audit_checks(tmp_path):
         'People Mentioned (Natural Text)': ''})])
     rc, out = _verify('--input', good, '--audit-checks')
     assert 'ok    Check AK' in out and 'ok    Check AL' in out, out
+
+
+def test_statement_start_never_restores_a_transcript():
+    """7579: Natural Text with mid-line labels is a transcript; the page text before the
+    cut ("AUDIENCE: Good evening. SECRETARY CLINTON: ...") must not be pasted in."""
+    raw = ('Remarks\nJune 1, 2012\nGood evening. AUDIENCE: Good evening. SECRETARY CLINTON: And Minister, '
+           'thank you. (Applause.) Today HIV, and new infections are on the rise again in the region.')
+    assert ar.restore_statement_start('and new infections are on the rise again in the region.', raw) is None
+    assert ar._has_inline_label('Good evening. AUDIENCE: Good evening. SECRETARY CLINTON: And')

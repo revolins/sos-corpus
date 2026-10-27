@@ -400,6 +400,13 @@ _CHROME_WORDS_RE = re.compile(r'Other State Department Archive Sites|You are in:
 _LINE_LABEL_RE = re.compile(r"^\s*([A-Z][A-Z .'’\-]{1,60}?)\s*(?:\([^()\n]{0,30}\)\s*)?:\s*(.*)$")
 
 
+def _has_inline_label(text: str) -> bool:
+    """A speaker label anywhere in the text, mid-line included ("... Good evening.
+    AUDIENCE: Good evening. SECRETARY CLINTON: And Minister ...")."""
+    return any(_plausible_inline_label(m.group(1), text, m.start())
+               for m in _INLINE_LABEL_RE.finditer(text or ''))
+
+
 def restore_statement_start(text: str, raw: str, title: str = '', secretary: str = '') -> str | None:
     """A label-free statement that starts mid-sentence (the old half-text fallback
     cut it): put back what the page has between the statement's start (release
@@ -424,7 +431,8 @@ def restore_statement_start(text: str, raw: str, title: str = '', secretary: str
         prefix = prefix[lab.start(2):]
     if (not re.search(r'[A-Za-z]', _PAREN_NOTE_RE.sub('', prefix)) or len(prefix.split()) > 600
             or _CHROME_WORDS_RE.search(prefix)
-            or any(_LINE_LABEL_RE.match(line) for line in prefix.split('\n'))):
+            or any(_LINE_LABEL_RE.match(line) for line in prefix.split('\n'))
+            or _has_inline_label(prefix)):
         return None
     if prefix[-1:].isalpha():
         return prefix + body
@@ -685,7 +693,8 @@ def repair_row(row: dict) -> tuple[dict, list[str]]:
     step('stage_directions', strip_combined_stage(sos))
     step('cut_start', restore_cut_start(sos, raw) or restore_cut_start(sos, nat),
          restore_cut_start(nat, raw))
-    labelled = sos != nat and any(_LINE_LABEL_RE.match(x) for x in nat.split('\n')[:400])
+    labelled = sos != nat and (any(_LINE_LABEL_RE.match(x) for x in nat.split('\n')[:400])
+                               or _has_inline_label(nat))
     if labelled:
         step('foreign_fragment', drop_leading_foreign_fragment(sos, nat, sec)
              or drop_leading_foreign_fragment(sos, raw, sec))
