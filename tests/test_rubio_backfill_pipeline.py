@@ -532,7 +532,8 @@ def test_seed_files_parse():
     assert len(rb._dedup_candidates([rb.Candidate(u, 'supplemental') for u in urls])) == 8
     assert len([u for u in urls if 'miami-homestead' in u]) == 1
     ex = rb.load_exclusions(repo / 'rubio_coverage_exclusions.csv')
-    assert len(ex.url_keys) == 8 and len(ex.slug_dates) == 2
+    # 8 from the 2026-10-21 scope review + 2 ground-truth exclusions (2026-10-27)
+    assert len(ex.url_keys) == 10 and len(ex.slug_dates) == 2
     assert rb._live_key(f'{WWW}/remarks-secretary-rubio/') in ex.url_keys
 
 
