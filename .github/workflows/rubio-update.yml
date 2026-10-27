@@ -430,6 +430,15 @@ jobs:
           # download --pattern` looks for), so rename the local file first.
           cp "data/corpus_updated.csv" "data/corpus_${TAG}.csv"
           ASSETS=("data/corpus_${TAG}.csv")
+          # The manifest the codebook promises (row count, column order, CSV SHA-256,
+          # Row Hash fingerprint). It records no file name, so renaming it with the
+          # CSV keeps its csv_sha256 valid for the uploaded file.
+          if [ -f "data/corpus_updated.csv.manifest.json" ]; then
+            cp "data/corpus_updated.csv.manifest.json" "data/corpus_${TAG}.csv.manifest.json"
+            ASSETS+=("data/corpus_${TAG}.csv.manifest.json")
+          else
+            NOTES="${NOTES} Manifest not attached (corpus_updated.csv.manifest.json missing)."
+          fi
           if [ -f "data/codebook_${TAG}.pdf" ]; then
             ASSETS+=("data/codebook_${TAG}.pdf")
           else
