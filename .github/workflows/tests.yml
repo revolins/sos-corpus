@@ -1,0 +1,43 @@
+name: Tests
+
+# The test suite (tests/) on every pull request and every push to main, so a
+# change to the pipeline, the verifier or the repairs is checked before it is
+# merged. Installs only what the weekly pipeline installs (scripts/requirements.txt)
+# plus pytest, so a test that needs anything else fails here first.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py3.11-tests-${{ hashFiles('scripts/requirements.txt') }}
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt pytest
+
+      - name: Run tests
+        run: python -m pytest -q tests
