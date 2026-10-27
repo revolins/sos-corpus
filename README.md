@@ -85,6 +85,14 @@ csv_path = hf_hub_download(
 )
 ```
 
+## Quick start for researchers
+
+[`examples/`](examples/) has a Python notebook and an R script that load the latest release and walk through a first look at the data:
+- who speaks, when and where;
+- how much the Secretary says;
+- the countries and people mentioned;
+- how to follow a term over time.
+
 ## Dataset columns
 
 Each row is one public communication by a sitting Secretary of State. Every release has 19 columns: 11 core columns and 8 derived columns added by the enrichment stage. The table follows the grouping in the paper (Table A1); in the CSV itself, `Canonical URL` is the last column.
