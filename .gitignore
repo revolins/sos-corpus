@@ -8,6 +8,7 @@ data/*
 !data/title_overrides.csv
 !data/catchup_fixes_2026_10.csv
 !data/rubio_gt_classified.csv
+!data/rubio_unique_translations.csv
 # Small offline test fixtures (CSV ones included) must ship with the repo.
 !tests/fixtures/**/*.csv
 *.parquet

@@ -44,6 +44,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import csv
 import hashlib
 import json
@@ -115,7 +116,7 @@ E4_LISTINGS = (
 # Sitemap families E2 reads (the part of the child name before -sitemapN.xml).
 E2_FAMILIES = ('state_press_release', 'state_briefing', 'state_ext_content', 'page')
 
-ALL_STAGES = ('E1', 'E2', 'E3', 'E4', 'E6')
+ALL_STAGES = ('E1', 'E2', 'E3', 'E4', 'E6', 'T1')
 
 # source_set bitmask. 8/16 are not crawl stages but are recorded so a row's
 # provenance is visible in one column.
@@ -882,6 +883,145 @@ def load_state(path: Path | None) -> dict:
     return base
 
 
+# ---------------------------------------------------------------------------
+# T1: translations (decided 2026-10-22: a /translations/<lang>/ page is in scope
+# only when it has NO English counterpart). Every translation page carries a
+# "view the original" line in its language -- "Para ver el texto original, ir
+# a: https://www.state.gov/...", "Voir le contenu d'origine : ...",
+# "欲查看原稿内容: ...", "Для просмотра оригинала: ..." -- whose link is the
+# English page. That link, not the language, decides: no original link means a
+# unique translation, which goes to hand review.
+# ---------------------------------------------------------------------------
+
+_TRANSLATION_RE = re.compile(r'^/translations/([^/]+)/([^/]+)/?$')
+TRANSLATION_COLS = ['url', 'url_key', 'lang', 'status', 'error', 'title', 'original_url',
+                    'original_key', 'original_known', 't_class', 'needs_review',
+                    'first_300', 'probe_runs', 'probed_at']
+
+
+def translation_lang(url: str) -> str:
+    """'spanish', 'العربية', ... for a translation item URL; '' for anything else
+    (including the /translations/<lang>/ index pages)."""
+    from urllib.parse import unquote
+    m = _TRANSLATION_RE.match(unquote(urlsplit(url).path))
+    return m.group(1) if m else ''
+
+
+def _is_english_title(text: str) -> bool:
+    """An English page title used as anchor text: five or more words, nearly all
+    ASCII letters (navigation and tag links are short or in the page's language)."""
+    words = text.split()
+    letters = [c for c in text if c.isalpha()]
+    return (len(words) >= 5 and bool(letters)
+            and sum(c.isascii() for c in letters) / len(letters) > 0.95)
+
+
+_NON_ITEM_PREFIXES = ('bureau', 'office-', 'countries-areas', 'policy-issues', 'about',
+                      'biographies', 'remarks-secretary-', 'releases', 'translations')
+
+
+def _is_item_path(path: str) -> bool:
+    """A release/remarks page, not navigation: /releases/<office>/YYYY/MM/<slug>/ or a
+    flat /<long-slug>/ that is not a bureau, office, country or topic page."""
+    if re.search(r'^/releases/[^/]+/\d{4}/\d{2}/[^/]+/?$', path):
+        return True
+    parts = [p for p in path.split('/') if p]
+    return (len(parts) == 1 and parts[0].count('-') >= 4
+            and not parts[0].startswith(_NON_ITEM_PREFIXES))
+
+
+def find_original_url(soup) -> str:
+    """The English original a translation page links to: the first state.gov
+    link in the page body, outside /translations/, whose anchor text is the URL
+    itself ("Para ver el texto original, ir a: https://...") or the English
+    title (Persian/Urdu pages: "پیوند به محتوای اصلی: Secretary of State Marco
+    Rubio Remarks to the Press at ...").
+
+    URL-text anchors win over title anchors; /biographies/ links (a byline such
+    as "MARCO RUBIO, SECRETARIO DE ESTADO" can link there) never count.
+    """
+    body = soup.find('main') or soup
+    url_hits, title_hits = [], []
+    for a in body.find_all('a', href=True):
+        href = a['href'].strip()
+        host = (urlsplit(href).hostname or '').lower()
+        path = urlsplit(href).path
+        if not (host == 'state.gov' or host.endswith('.state.gov')):
+            continue
+        if '/translations/' in path or path.startswith('/biographies/'):
+            continue
+        text = a.get_text(' ', strip=True)
+        if text.startswith('http'):
+            url_hits.append(href)
+        elif _is_english_title(text) and _is_item_path(path):
+            title_hits.append(href)
+    return (url_hits or title_hits or [''])[0]
+
+
+def probe_translation(fetcher: 'PoliteFetcher', url: str, known_keys: set) -> dict:
+    res = fetcher.get(url)
+    row = {'url': url, 'url_key': url_key(url), 'lang': translation_lang(url),
+           'status': res.status, 'error': res.error, 'probed_at': _now_iso(),
+           'title': '', 'original_url': '', 'original_key': '', 'original_known': '',
+           'first_300': ''}
+    if res.resp is None or not res.ok:
+        row.update(t_class='fetch_error', needs_review=0)
+        return row
+    try:
+        soup = _make_soup(res.resp.text)
+    except Exception as e:  # noqa: BLE001
+        row.update(error=f'parse: {e}', t_class='fetch_error', needs_review=0)
+        return row
+    h1 = soup.find('h1')
+    row['title'] = h1.get_text(' ', strip=True)[:300] if h1 else ''
+    raw = soup.get_text('\n', strip=True)
+    hide = raw.find('\nhide\n')
+    row['first_300'] = raw[hide + 6: hide + 306] if hide >= 0 else raw[:300]
+    orig = find_original_url(soup)
+    if orig:
+        okey = url_key(orig)
+        row.update(original_url=orig, original_key=okey,
+                   original_known=int(okey in known_keys
+                                      or canonical_url_key(orig.split('?')[0]) in known_keys),
+                   t_class='translation_of_english', needs_review=0)
+    else:
+        row.update(t_class='translation_unique', needs_review=1)
+    return row
+
+
+def run_t1(fetcher: 'PoliteFetcher', state: dict, known_keys: set) -> tuple[int, int]:
+    """Probe every translation item URL from the sitemaps once (resumable).
+    Returns (probed this run, still pending)."""
+    done = state.setdefault('translations', {})
+    todo = []
+    for u in state['e2_urls']:
+        if not translation_lang(u):
+            continue
+        k = url_key(u)
+        prev = done.get(k)
+        if prev and (prev['t_class'] != 'fetch_error' or int(prev.get('probe_runs') or 1)
+                     >= MAX_PROBE_RUNS or int(prev.get('status') or 0) in (404, 410)):
+            continue
+        todo.append(u)
+    # Rubio-named slugs first (any script), then the rest; stable order for resume.
+    named = re.compile(r'rubio|рубио|روبيو|روبیو|卢比奥|रुबियो', re.I)
+    from urllib.parse import unquote
+    todo.sort(key=lambda u: (not named.search(unquote(u)), u))
+    print(f'{LOG} T1: {len(todo)} translation page(s) to probe, {fetcher.remaining} '
+          f'request(s) left', file=sys.stderr)
+    n = 0
+    for u in todo:
+        k = url_key(u)
+        prev = done.get(k, {})
+        row = probe_translation(fetcher, u, known_keys)
+        row['probe_runs'] = int(prev.get('probe_runs') or 0) + 1
+        done[k] = row
+        n += 1
+        if n % 50 == 0:
+            print(f'  [T1 {n}/{len(todo)}]', file=sys.stderr)
+    return n, len(todo) - n
+
+
 def save_state(state: dict, path: Path) -> None:
     tmp = Path(str(path) + '.tmp')
     with open(tmp, 'w', encoding='utf-8') as f:
@@ -1244,8 +1384,16 @@ def load_classified(path: Path | None) -> dict:
 
 def run_e6(fetcher: PoliteFetcher, state: dict, cands: dict, *, max_probes: int,
            scope_floor: date) -> int:
-    todo = [c for c in cands.values() if c['probe_status'] == 'pending']
-    todo.sort(key=lambda c: (c['probe_priority'], tuple(-x for x in (url_year_month(c['url']) or (0, 0))),
+    # Translation pages are T1's (classified by their English original link).
+    todo = [c for c in cands.values() if c['probe_status'] == 'pending'
+            and not translation_lang(c['url'])]
+    # English originals that translations link to come first within their
+    # priority: the 2026-10-22 T1 run showed undated flat pages such as
+    # /responding-to-panama-earthquake/ (a Rubio press statement) hide there.
+    linked = {r.get('original_key') for r in state.get('translations', {}).values()
+              if r.get('original_key')}
+    todo.sort(key=lambda c: (c['probe_priority'], c['url_key'] not in linked,
+                             tuple(-x for x in (url_year_month(c['url']) or (0, 0))),
                              c['url_key']))
     n = 0
     print(f'{LOG} E6: {len(todo)} URL(s) to probe, {fetcher.remaining} request(s) left',
@@ -1308,7 +1456,35 @@ def parse_args(argv=None) -> argparse.Namespace:
                     help='Event-date floor for in_scope and the E4 stop (default 2025-01-21)')
     ap.add_argument('--offline-fixtures', type=Path,
                     help='Serve requests from DIR/manifest.json instead of the network (dry runs, tests)')
+    ap.add_argument('--sample-urls', type=Path,
+                    help='Fetch only the URLs in this file (one per line) with the polite fetcher, '
+                         'save each page\'s full HTML under <out-dir>/samples/, and exit. '
+                         'For inspecting page markup the crawl cannot see from here.')
     return ap.parse_args(argv)
+
+
+def sample_pages(fetcher: 'PoliteFetcher', urls: list[str], out_dir: Path) -> list[dict]:
+    """Fetch each URL once and save its HTML; returns an index of what was saved."""
+    sdir = out_dir / 'samples'
+    sdir.mkdir(parents=True, exist_ok=True)
+    index = []
+    for i, url in enumerate(urls, 1):
+        try:
+            res = fetcher.get(url)
+        except BudgetExhausted as e:
+            print(f'{LOG} sample: {e}; stopping', file=sys.stderr)
+            break
+        name = f'{i:03d}.html'
+        body = getattr(res.resp, 'text', '') or ''
+        if body:
+            (sdir / name).write_text(body, encoding='utf-8')
+        index.append({'n': i, 'url': url, 'status': res.status, 'error': res.error,
+                      'final_url': str(getattr(res.resp, 'url', '') or ''),
+                      'file': name if body else '', 'bytes': len(body)})
+        print(f'{LOG} sample {i}/{len(urls)} {res.status} {url}', file=sys.stderr)
+    _write_csv(sdir / 'index.csv', ['n', 'url', 'status', 'error', 'final_url', 'file', 'bytes'],
+               index)
+    return index
 
 
 def main(argv=None) -> int:
@@ -1324,7 +1500,7 @@ def main(argv=None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     state_out = args.state_out or (out_dir / 'gt_state.json')
     run_id = args.run_id or os.environ.get('GITHUB_RUN_ID', '') or str(int(time.time()))
-    if 'E6' in stages and not args.corpus:
+    if 'E6' in stages and not args.corpus and not args.sample_urls:
         print(f'{LOG} ERROR: E6 needs --corpus (the diff set is "minus corpus keys")',
               file=sys.stderr)
         return 2
@@ -1343,6 +1519,14 @@ def main(argv=None) -> int:
     fetcher = PoliteFetcher(session, max_requests=args.max_requests,
                             min_interval=args.min_interval, jitter=args.jitter,
                             deadline=deadline, sleep=sleep)
+
+    if args.sample_urls:
+        urls = [ln.strip() for ln in args.sample_urls.read_text(encoding='utf-8').splitlines()
+                if ln.strip() and not ln.lstrip().startswith('#')]
+        idx = sample_pages(fetcher, urls, out_dir)
+        ok = sum(1 for r in idx if r['status'] == 200)
+        print(f'{LOG} sampled {ok}/{len(urls)} pages OK into {out_dir / "samples"}', file=sys.stderr)
+        return 0 if idx else 1
 
     exhausted = ''
     fatal = []
@@ -1422,8 +1606,21 @@ def main(argv=None) -> int:
                               scope_floor=scope_floor)
         except BudgetExhausted as e:
             exhausted = str(e)
-        pending = sum(1 for c in cands.values() if c['probe_status'] in ('pending', 'fetch_error'))
+        pending = sum(1 for c in cands.values() if c['probe_status'] in ('pending', 'fetch_error')
+                      and not translation_lang(c['url']))
         state['stages']['E6'] = 'done' if not pending else 'partial'
+
+    if 'T1' in stages and not exhausted:
+        # An original is "known" when it is a corpus row or any sitemap URL.
+        known = {url_key(u) for u in state['e2_urls']}
+        if idx is not None:
+            known |= set(idx.url_keys)
+        t_left = 1
+        try:
+            _, t_left = run_t1(fetcher, state, known)
+        except BudgetExhausted as e:
+            exhausted = str(e)
+        state['stages']['T1'] = 'done' if not t_left and not exhausted else 'partial'
 
     state['requests_total'] += fetcher.used
     state['runs'][-1].update({'finished': _now_iso(), 'requests': fetcher.used,
@@ -1441,6 +1638,11 @@ def main(argv=None) -> int:
     _write_csv(out_dir / 'probe.csv', PROBE_COLS,
                sorted(state['probes'].values(), key=lambda r: r['url_key']))
     _write_csv(out_dir / 'drift_report.csv', DRIFT_COLS, drift_rows(state))
+    if state.get('translations'):
+        trows = sorted(state['translations'].values(), key=lambda r: (r['lang'], r['url_key']))
+        _write_csv(out_dir / 'translations.csv', TRANSLATION_COLS, trows)
+        _write_csv(out_dir / 'translations_unique.csv', TRANSLATION_COLS,
+                   [r for r in trows if r['t_class'] == 'translation_unique'])
 
     # ground_truth: corpus Rubio rows (classified offline from Raw Text),
     # --classified rows, and probed rows. One row per url_key.
@@ -1522,11 +1724,17 @@ def main(argv=None) -> int:
             'sitemap_children': len(state['index'] or []), 'sitemaps_read': len(state['sitemaps']),
             'e2_urls': len(state['e2_urls']), 'candidates': len(cands),
             'in_corpus': sum(1 for c in cands.values() if c['in_corpus'] == 1),
-            'probe_pending': sum(1 for c in cands.values() if c['probe_status'] in ('pending', 'fetch_error')),
+            'probe_pending': sum(1 for c in cands.values() if c['probe_status'] in ('pending', 'fetch_error') and not translation_lang(c['url'])),
             'probed_this_run': n_probed, 'probed_total': len(state['probes']),
             'corpus_rubio_rows': len(corpus_rows), 'ground_truth_rows': len(gt_rows),
             'in_scope': sum(1 for r in gt_rows if str(r['in_scope']) == '1'),
             'gt_diff_rows': len(diff), 'gt_class': class_counts,
+            'translations_probed': len(state.get('translations', {})),
+            't_class': dict(sorted(Counter(r['t_class'] for r in
+                                           state.get('translations', {}).values()).items())),
+            'translations_original_unknown': sum(
+                1 for r in state.get('translations', {}).values()
+                if r['t_class'] == 'translation_of_english' and str(r['original_known']) == '0'),
         },
         'errors': state['errors'][-200:], 'n_errors': len(state['errors']),
         'args': {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
