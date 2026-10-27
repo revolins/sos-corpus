@@ -73,6 +73,8 @@ from corpus_keys import (
 # scraper read pages identically. Private helpers are imported, never edited.
 from rubio_backfill import (
     _HEADERS,
+    _JOINT_RELEASED_RE,
+    _JOINT_TITLE_RE,
     _flatten_jsonld,
     _make_soup,
     _parse_date,
@@ -786,6 +788,10 @@ def classify_page(raw: str, *, url: str = '', final_url: str = '', status: int =
     elif third and (prepared_marker or transcript_marker):
         cls, why = 'rubio_spoken', 'third-person intro + as-prepared/transcript marker'
         out['needs_review'] = 1
+    elif _JOINT_RELEASED_RE.search(sample[:600]) or _JOINT_TITLE_RE.search(block.get('title', '')):
+        # The weekly path's rule (rubio_backfill): a joint statement Rubio releases
+        # himself, named in its title or opening line, is his voice.
+        cls, why = 'rubio_joint', 'joint statement released by Rubio (title / opening line)'
     elif readout:
         cls, why = 'readout', 'readout opener/type'
     elif rubio_by and others:
@@ -987,6 +993,54 @@ def probe_translation(fetcher: 'PoliteFetcher', url: str, known_keys: set) -> di
     else:
         row.update(t_class='translation_unique', needs_review=1)
     return row
+
+
+def apply_joint_rule(gt_rows: list[dict], scope_floor: date = DEFAULT_SCOPE_FLOOR) -> int:
+    """Re-apply the joint-statement rule to rows classified before it existed (a
+    resumed crawl keeps earlier probe results): a statement Rubio releases himself,
+    named in its title or opening line, is rubio_joint and in scope. Returns the
+    rows changed."""
+    changed = 0
+    for r in gt_rows:
+        if r.get('gt_class') not in ('spokesperson_third_person', 'other_principal'):
+            continue
+        if not (_JOINT_RELEASED_RE.search((r.get('first_600') or '')[:600])
+                or _JOINT_TITLE_RE.search(r.get('title') or '')):
+            continue
+        ev = r.get('event_date') or ''
+        try:
+            ok = date.fromisoformat(ev) >= scope_floor if ev else True
+        except ValueError:
+            ok = True
+        r.update(gt_class='rubio_joint', modality=IN_SCOPE_CLASSES.get('rubio_joint', 'joint'),
+                 in_scope=1 if ok else 0,
+                 reason='joint statement released by Rubio (title / opening line)')
+        changed += 1
+    return changed
+
+
+def apply_translation_scope(gt_rows: list[dict], translations: dict) -> int:
+    """Translation pages are never ground-truth items in their own right: a
+    translation of an English item is the same item (the English page is the one
+    in scope), and the unique ones -- Rubio op-eds with no English page on state.gov
+    -- are recorded in data/rubio_unique_translations.csv but not added (decided
+    2026-10-22). Without this, an E6 probe of a translation page with Rubio labels
+    made it an in-scope item the weekly run would try to add. Returns the rows
+    changed."""
+    changed = 0
+    for r in gt_rows:
+        path = urlsplit(r.get('canonical_url') or '').path or r.get('url_key', '')
+        if '/translations/' not in path:
+            continue
+        t = translations.get(r.get('url_key', ''), {})
+        t_class = t.get('t_class') or 'translation_unclassified'
+        reason = {'translation_of_english': 'translation of an English item (the English page is the item)',
+                  'translation_unique': 'unique translation; recorded in rubio_unique_translations.csv, not added'
+                  }.get(t_class, 'translation page')
+        if r.get('gt_class') != t_class or str(r.get('in_scope')) != '0':
+            r.update(gt_class=t_class, in_scope=0, modality='', reason=reason)
+            changed += 1
+    return changed
 
 
 def run_t1(fetcher: 'PoliteFetcher', state: dict, known_keys: set) -> tuple[int, int]:
@@ -1703,6 +1757,8 @@ def main(argv=None) -> int:
                  'needs_review': src.get('needs_review', ''), 'reason': src.get('reason', 'classified CSV'),
                  'title': src.get('title', '')}
     gt_rows = sorted(gt.values(), key=lambda r: (r['event_date'] or '', r['url_key']))
+    apply_joint_rule(gt_rows, scope_floor)
+    apply_translation_scope(gt_rows, state.get('translations') or {})
     _write_csv(out_dir / 'ground_truth.csv', GT_COLS, gt_rows)
     diff = [r for r in gt_rows if not r['in_corpus'] and str(r['in_scope']) in ('1', '')]
     _write_csv(out_dir / 'gt_diff.csv', DIFF_COLS, diff)

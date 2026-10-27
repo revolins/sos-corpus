@@ -597,3 +597,40 @@ def test_e6_skips_translations_and_probes_linked_originals_first():
         gt.probe_page = real
     assert seen == [orig, other]          # linked original first; translation never probed
     assert cands[gt.url_key(_ES)]['probe_status'] == 'pending'
+
+
+def test_translation_pages_are_never_in_scope_items():
+    """A translation of an English item is the same item; a unique translation is
+    recorded but not added (2026-10-22). Rubio labels on the page do not change that."""
+    from rubio_ground_truth import apply_translation_scope
+    rows = [{'url_key': 'state.gov/translations/spanish/entrevista', 'gt_class': 'rubio_spoken', 'in_scope': 1,
+             'canonical_url': 'https://www.state.gov/translations/spanish/entrevista/'},
+            {'url_key': 'state.gov/translations/french/op-ed', 'gt_class': 'rubio_written_byline', 'in_scope': 1,
+             'canonical_url': 'https://www.state.gov/translations/french/op-ed/'},
+            {'url_key': 'state.gov/releases/x', 'gt_class': 'rubio_spoken', 'in_scope': 1,
+             'canonical_url': 'https://www.state.gov/releases/x/'}]
+    tr = {'state.gov/translations/spanish/entrevista': {'t_class': 'translation_of_english'},
+          'state.gov/translations/french/op-ed': {'t_class': 'translation_unique'}}
+    assert apply_translation_scope(rows, tr) == 2
+    assert [(r['gt_class'], r['in_scope']) for r in rows] == [
+        ('translation_of_english', 0), ('translation_unique', 0), ('rubio_spoken', 1)]
+
+
+def test_joint_statement_rule_reclassifies_stored_probes():
+    """The weekly path's _JOINT_RELEASED_RE, applied to probes classified before it."""
+    from rubio_ground_truth import apply_joint_rule, classify_page
+    rows = [{'gt_class': 'spokesperson_third_person', 'in_scope': 0, 'event_date': '2025-10-16',
+             'first_600': 'Joint Statement by Secretary of State Marco Rubio, United States Trade '
+                          'Representative Jamieson Greer, and Minister of Foreign Affairs for Brazil', 'title': ''},
+            {'gt_class': 'spokesperson_third_person', 'in_scope': 0, 'event_date': '2025-10-16',
+             'first_600': 'The following statement was released by the Governments of the United States and Brazil.',
+             'title': ''}]
+    assert apply_joint_rule(rows) == 1
+    assert (rows[0]['gt_class'], rows[0]['in_scope']) == ('rubio_joint', 1)
+    assert rows[1]['gt_class'] == 'spokesperson_third_person'
+    raw = ('U.S.-Brazil Meetings\nhide\nU.S.-Brazil Meetings\nMedia Note\nOffice of the Spokesperson\n'
+           'October 16, 2025\nJoint Statement by Secretary of State Marco Rubio, United States Trade '
+           'Representative Jamieson Greer, and Minister of Foreign Affairs for Brazil Mauro Vieira\n'
+           'Today, the three met in Washington.\nTags\n')
+    assert classify_page(raw, url='https://www.state.gov/releases/office-of-the-spokesman/2025/10/u-s-brazil-meetings/',
+                         status=200)['gt_class'] == 'rubio_joint'
