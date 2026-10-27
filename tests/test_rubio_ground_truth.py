@@ -471,3 +471,166 @@ def test_unknown_stage_rejected(tmp_path):
 def test_fixtures_are_small():
     for p in FIX.iterdir():
         assert p.stat().st_size < 200_000, p
+
+
+# ---------------------------------------------------------------------------
+# T1: translations are in scope only without an English original (2026-10-22)
+# ---------------------------------------------------------------------------
+
+class _TResp:
+    def __init__(self, text, status=200, url=''):
+        self.text, self.status_code, self.url, self.history = text, status, url, []
+
+
+class _FakeFetcher:
+    def __init__(self, pages):
+        self.pages, self.used, self.max_requests = pages, 0, 10 ** 6
+
+    @property
+    def remaining(self):
+        return self.max_requests - self.used
+
+    def get(self, url):
+        self.used += 1
+        if url not in self.pages:
+            return gt.FetchResult(url, _TResp('', 404, url), '', 1)
+        return gt.FetchResult(url, _TResp(self.pages[url], 200, url), '', 1)
+
+
+_ES = 'https://www.state.gov/translations/spanish/comparecencia-del-secretario-rubio/'
+_ZH = 'https://www.state.gov/translations/chinese/%e5%8d%a2%e6%af%94%e5%a5%a5/'
+_UNIQUE = 'https://www.state.gov/translations/spanish/mensaje-solo-en-espanol/'
+_ORIG = ('https://www.state.gov/releases/office-of-the-spokesperson/2026/06/'
+         'secretary-of-state-marco-rubio-before-the-house-foreign-affairs-committee/')
+
+
+def _tpage(title, body, original=None, prefix='Para ver el texto original, ir a:'):
+    link = (f'<p>{prefix} <a href="{original}">{original}</a></p>' if original else '')
+    return (f'<html><body><nav><a href="https://www.state.gov/translations/spanish/">Español</a></nav>'
+            f'<main><span>hide</span><h1>{title}</h1><p>{body}</p>{link}'
+            f'<p><a href="https://www.state.gov/releases/office-of-the-spokesman/2026/06/other/">'
+            f'Más</a></p></main></body></html>')
+
+
+def test_translation_lang():
+    assert gt.translation_lang(_ES) == 'spanish'
+    assert gt.translation_lang(_ZH) == 'chinese'
+    assert gt.translation_lang(
+        'https://www.state.gov/translations/%d1%80%d1%83%d1%81%d1%81%d0%ba%d0%b8%d0%b9/x/') == 'русский'
+    assert gt.translation_lang('https://www.state.gov/translations/spanish/') == ''   # index page
+    assert gt.translation_lang(_ORIG) == ''
+
+
+def test_find_original_url_needs_url_anchor_text():
+    soup = gt._make_soup(_tpage('T', 'Gracias.', _ORIG))
+    assert gt.find_original_url(soup) == _ORIG
+    # A state.gov link whose anchor text is not a URL (navigation, "Más") is not it.
+    assert gt.find_original_url(gt._make_soup(_tpage('T', 'Gracias.'))) == ''
+    # Persian/Urdu layout: the anchor text is the English title, not the URL.
+    html = ('<html><body><main><h1>T</h1><p>\u067e\u06cc\u0648\u0646\u062f: <a href="' + _ORIG + '">'
+            'Secretary of State Marco Rubio Before the House Foreign Affairs Committee</a></p>'
+            '<p><a href="https://www.state.gov/bureau-of-near-eastern-affairs/">Near Eastern Affairs</a></p>'
+            '</main></body></html>')
+    assert gt.find_original_url(gt._make_soup(html)) == _ORIG
+    # An English-titled navigation link (bureau page) is not an original.
+    html = ('<html><body><main><h1>T</h1><p><a href="https://www.state.gov/bureaus-offices/'
+            'under-secretary-for-management/bureau-of-budget-and-planning/">Bureau of Budget and '
+            'Planning Under Secretary for Management</a></p></main></body></html>')
+    assert gt.find_original_url(gt._make_soup(html)) == ''
+    assert gt._is_item_path('/secretary-of-state-marco-rubio-at-a-tour-of-aeroman/')
+    assert not gt._is_item_path('/bureau-of-western-hemisphere-affairs-and-more/')
+    # A byline linking to the biography is never the original, even when it
+    # comes first and reads as five ASCII words.
+    html = ('<html><body><main><h1>T</h1><p><a href="https://www.state.gov/biographies/marco-rubio/">'
+            'MARCO RUBIO, SECRETARIO DE ESTADO</a></p><p>Para ver el texto original, ir a: '
+            '<a href="' + _ORIG + '">' + _ORIG + '</a></p></main></body></html>')
+    assert gt.find_original_url(gt._make_soup(html)) == _ORIG
+
+
+def test_t1_classifies_and_resumes():
+    pages = {
+        _ES: _tpage('Comparecencia', 'SECRETARIO RUBIO: Gracias.', _ORIG),
+        _ZH: _tpage('卢比奥国务卿', '卢比奥国务卿：谢谢。', _ORIG, prefix='欲查看原稿内容:'),
+        _UNIQUE: _tpage('Mensaje', 'SECRETARIO RUBIO: Solo en español.'),
+    }
+    state = gt.new_state()
+    state['e2_urls'] = {u: {} for u in (_ES, _ZH, _UNIQUE, 'https://www.state.gov/translations/spanish/',
+                                        _ORIG)}
+    known = {gt.url_key(_ORIG)}
+    f = _FakeFetcher(pages)
+    n, left = gt.run_t1(f, state, known)
+    assert (n, left) == (3, 0) and f.used == 3          # index page and English URL not probed
+    by = {r['url']: r for r in state['translations'].values()}
+    assert by[_ES]['t_class'] == 'translation_of_english' and by[_ES]['original_known'] == 1
+    assert by[_ZH]['lang'] == 'chinese' and by[_ZH]['t_class'] == 'translation_of_english'
+    assert by[_UNIQUE]['t_class'] == 'translation_unique' and by[_UNIQUE]['needs_review'] == 1
+    # Resume: nothing left to fetch.
+    f2 = _FakeFetcher(pages)
+    assert gt.run_t1(f2, state, known) == (0, 0) and f2.used == 0
+
+
+def test_t1_original_known_ignores_spokesperson_fold():
+    # A corpus key stored under the pre-rename path still counts as known.
+    pages = {_ES: _tpage('T', 'x', _ORIG)}
+    state = gt.new_state()
+    state['e2_urls'] = {_ES: {}}
+    from corpus_keys import canonical_url_key
+    gt.run_t1(_FakeFetcher(pages), state, {canonical_url_key(_ORIG)})
+    assert next(iter(state['translations'].values()))['original_known'] == 1
+
+
+def test_e6_skips_translations_and_probes_linked_originals_first():
+    orig = 'https://www.state.gov/responding-to-panama-earthquake/'
+    other = 'https://www.state.gov/aaa-some-other-undated-page/'
+    cands = {}
+    for u in (other, orig, _ES):
+        cands[gt.url_key(u)] = {'url': u, 'url_key': gt.url_key(u), 'probe_status': 'pending',
+                                'probe_priority': 3}
+    state = gt.new_state()
+    state['translations'] = {'t': {'original_key': gt.url_key(orig)}}
+    seen = []
+    real = gt.probe_page
+    gt.probe_page = lambda f, u, sf: (seen.append(u) or {'gt_class': 'readout'})
+    try:
+        gt.run_e6(_FakeFetcher({}), state, cands, max_probes=0, scope_floor=gt.DEFAULT_SCOPE_FLOOR)
+    finally:
+        gt.probe_page = real
+    assert seen == [orig, other]          # linked original first; translation never probed
+    assert cands[gt.url_key(_ES)]['probe_status'] == 'pending'
+
+
+def test_translation_pages_are_never_in_scope_items():
+    """A translation of an English item is the same item; a unique translation is
+    recorded but not added (2026-10-22). Rubio labels on the page do not change that."""
+    from rubio_ground_truth import apply_translation_scope
+    rows = [{'url_key': 'state.gov/translations/spanish/entrevista', 'gt_class': 'rubio_spoken', 'in_scope': 1,
+             'canonical_url': 'https://www.state.gov/translations/spanish/entrevista/'},
+            {'url_key': 'state.gov/translations/french/op-ed', 'gt_class': 'rubio_written_byline', 'in_scope': 1,
+             'canonical_url': 'https://www.state.gov/translations/french/op-ed/'},
+            {'url_key': 'state.gov/releases/x', 'gt_class': 'rubio_spoken', 'in_scope': 1,
+             'canonical_url': 'https://www.state.gov/releases/x/'}]
+    tr = {'state.gov/translations/spanish/entrevista': {'t_class': 'translation_of_english'},
+          'state.gov/translations/french/op-ed': {'t_class': 'translation_unique'}}
+    assert apply_translation_scope(rows, tr) == 2
+    assert [(r['gt_class'], r['in_scope']) for r in rows] == [
+        ('translation_of_english', 0), ('translation_unique', 0), ('rubio_spoken', 1)]
+
+
+def test_joint_statement_rule_reclassifies_stored_probes():
+    """The weekly path's _JOINT_RELEASED_RE, applied to probes classified before it."""
+    from rubio_ground_truth import apply_joint_rule, classify_page
+    rows = [{'gt_class': 'spokesperson_third_person', 'in_scope': 0, 'event_date': '2025-10-16',
+             'first_600': 'Joint Statement by Secretary of State Marco Rubio, United States Trade '
+                          'Representative Jamieson Greer, and Minister of Foreign Affairs for Brazil', 'title': ''},
+            {'gt_class': 'spokesperson_third_person', 'in_scope': 0, 'event_date': '2025-10-16',
+             'first_600': 'The following statement was released by the Governments of the United States and Brazil.',
+             'title': ''}]
+    assert apply_joint_rule(rows) == 1
+    assert (rows[0]['gt_class'], rows[0]['in_scope']) == ('rubio_joint', 1)
+    assert rows[1]['gt_class'] == 'spokesperson_third_person'
+    raw = ('U.S.-Brazil Meetings\nhide\nU.S.-Brazil Meetings\nMedia Note\nOffice of the Spokesperson\n'
+           'October 16, 2025\nJoint Statement by Secretary of State Marco Rubio, United States Trade '
+           'Representative Jamieson Greer, and Minister of Foreign Affairs for Brazil Mauro Vieira\n'
+           'Today, the three met in Washington.\nTags\n')
+    assert classify_page(raw, url='https://www.state.gov/releases/office-of-the-spokesman/2025/10/u-s-brazil-meetings/',
+                         status=200)['gt_class'] == 'rubio_joint'

@@ -27,6 +27,10 @@ on:
         description: 'Optional: run id of an earlier ground-truth run whose gt_state.json to resume from'
         type: string
         default: ''
+      sample_urls_file:
+        description: 'Optional: repo path of a URL list; fetch only those pages and upload their HTML (no crawl stages)'
+        type: string
+        default: ''
       publish_prerelease:
         description: 'Attach the outputs to a gt-YYYY.MM.DD prerelease (only if the crawl completed)'
         type: boolean
@@ -122,7 +126,13 @@ jobs:
           STAGES: ${{ inputs.stages }}
           MAX_REQUESTS: ${{ inputs.max_requests }}
           OUT: ${{ steps.dirs.outputs.out }}
+          SAMPLE: ${{ inputs.sample_urls_file }}
         run: |
+          if [ -n "$SAMPLE" ]; then
+            python scripts/rubio_ground_truth.py --sample-urls "$SAMPLE" \
+              --max-requests "$MAX_REQUESTS" --out-dir "$OUT" --run-id "$GITHUB_RUN_ID"
+            exit 0
+          fi
           ARGS=(--stages "$STAGES"
                 --max-requests "$MAX_REQUESTS"
                 --max-minutes 200
