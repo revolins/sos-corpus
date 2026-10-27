@@ -6,10 +6,15 @@
 \alias{sosspeech-package}
 \title{sosspeech: US Secretary of State Speech Corpus}
 \description{
-A corpus of speeches delivered by US Secretaries of State, distributed as a tidy data frame with speech-level metadata and full text.
+A corpus of speeches delivered by US Secretaries of State, distributed as a tidy data frame with speech-level metadata and full text. sos_load() downloads the latest weekly release from GitHub (or a fixed release, for replication) and caches it locally.
 }
 \author{
 \strong{Maintainer}: Ben Yoel \email{benjaminyoel@gmail.com}
+
+Authors:
+\itemize{
+  \item Ben Yoel \email{benjaminyoel@gmail.com}
+}
 
 }
 \keyword{internal}
