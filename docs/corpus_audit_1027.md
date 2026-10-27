@@ -87,11 +87,18 @@ The 53 lower-case starts and the 11 punctuation starts are the page's own text. 
 
 | Check | Rule | Severity |
 |---|---|---|
-| **AK** | A repair in `corpus_audit_repairs` would still change the row: another speaker's turn or a vocative question in SOS Text, a lost opening or first word, a missed stage direction, page chrome, lost characters, Natural Text not covering SOS Text. Also fails SOS Text that is mostly not on its own page. | FAIL |
+| **AK** | A repair in `corpus_audit_repairs` would still change the row: another speaker's turn or a vocative question in SOS Text, a lost opening or first word, a missed stage direction, page chrome, lost characters, Natural Text not covering SOS Text. Also fails SOS Text that is mostly not on its own page. Also fails 20+ SOS words whose 6-word sequences Natural Text has only in other speakers' turns: an independent detector (`foreign_leak_words`), so a repair that hides a leak cannot also hide it from the check. | FAIL |
 | **AL** | A People Mentioned value that is not a person (`corpus_enrich_v1.is_not_a_person`) | FAIL |
 | **AM** | SOS Text vocabulary is an outlier for its length (Heaps' law, \|z\| >= 4) | Warning only: an outlier is a lead, not an error |
 
 The repairs serve as the detectors, so a check and its fix cannot drift apart. Running AK strictly over the repaired corpus also tests that the repairs are idempotent.
+
+**Why AK also needs the independent detector.** A paragraph tidy, run before the other-speaker passes, joined vocative questions onto the paragraph before them. That added about 57k words of interviewers' text back into 548 rows. AK still passed, because it used the same paragraph-shaped detectors. Three changes fixed this:
+- The independent detector caught the leak.
+- The tidy now runs after the other-speaker passes.
+- A last sentence-level pass (`remove_foreign_sentences`) drops SOS sentences whose wording occurs only in other speakers' turns. It skips rows where the Secretary has no labelled turn, and never leaves fewer than 50 words.
+
+Rows with 20+ such words: 659 in v2026.10.26, 0 in the candidate. The only flagged rows left were removed as having no Secretary words.
 
 **Where they run:**
 - The weekly job (`corpus_rubio_update.py`) passes `--audit-checks` to both the per-row gate and the full verifier. A new row that fails AK or AL is held, not published.
@@ -119,6 +126,7 @@ All renumber the rows after them (Check Q accepts the audited removals).
 | 35, 73 | Nick Burns's press briefings as spokesman |
 | 6838 | A background briefing by senior administration officials |
 | 10170, 10171 | Spanish and French translations of row 10172 (translations of English items are out of scope) |
+| 5187, 5656, 5957, 6738, 6739, 6742 | Briefings by Assistant Secretary Campbell with no turn of Secretary Clinton |
 
 ## Decisions (user, 2026-10-27)
 
