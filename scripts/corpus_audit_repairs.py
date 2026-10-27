@@ -139,22 +139,38 @@ def _plausible_inline_label(label: str, text: str, pos: int) -> bool:
     return len(words) > 1 or words[0] in _ROLE_WORDS
 
 
+def _inline_labels(text: str) -> list[tuple[int, str]]:
+    """(position, label) of every plausible mid-line speaker label. A regex match can
+    swallow words before the label ("... Model UN. SECRETARY KERRY:"); when the whole
+    match is not plausible, its shorter word-final parts are tried."""
+    out = []
+    for m in _INLINE_LABEL_RE.finditer(text or ''):
+        words = m.group(1).split()
+        for k in range(len(words)):
+            lab = ' '.join(words[k:])
+            pos = m.start(1) if k == 0 else text.index(words[k], m.start(1) + len(' '.join(words[:k])))
+            if _plausible_inline_label(lab, text, pos):
+                out.append((pos, lab))
+                break
+    return out
+
+
 def remove_inline_other_turns(sos: str, natural: str, secretary: str) -> str:
     """Second pass of remove_other_turns for labels that sit mid-line in Natural
     Text too, so line-based segmentation never splits them off: each non-Secretary
     turn runs from its label to the next label of anyone, and exactly that span is
     removed from SOS Text."""
-    labels = [m for m in _INLINE_LABEL_RE.finditer(natural or '')
-              if _plausible_inline_label(m.group(1), natural, m.start())]
+    inline = _inline_labels(natural)
     out = sos
-    for k, m in enumerate(labels):
-        if is_secretary_label(m.group(1), secretary):
+    for k, (pos, lab_text) in enumerate(inline):
+        if is_secretary_label(lab_text, secretary):
             continue
-        end = labels[k + 1].start() if k + 1 < len(labels) else len(natural)
-        words = _PAREN_NOTE_RE.sub(' ', natural[m.end():end]).split()
+        colon = natural.index(':', pos)
+        end = inline[k + 1][0] if k + 1 < len(inline) else len(natural)
+        words = _PAREN_NOTE_RE.sub(' ', natural[colon + 1:end]).split()
         if not words:
             continue
-        lab = r'\s+'.join(re.escape(w) for w in m.group(1).split())
+        lab = r'\s+'.join(re.escape(w) for w in lab_text.split())
         # the whole turn, else its longest opening of 20+ words (the old extraction
         # sometimes mangled a turn's last words at the next label)
         head = rf'(?:(?<=\s)|^){lab}\s*(?:\([^()\n]{{0,30}}\)\s*)?:\s*'
@@ -224,8 +240,7 @@ def remove_foreign_paragraphs(sos: str, natural: str, secretary: str) -> str:
     paragraph starts to the next label, are removed; any of the Secretary's words
     merged into the same paragraph stay."""
     labels = [(m.start(), m.group(1)) for m in _LINE_START_LABEL_RE.finditer(natural)]
-    labels += [(m.start(), m.group(1)) for m in _INLINE_LABEL_RE.finditer(natural)
-               if _plausible_inline_label(m.group(1), natural, m.start())]
+    labels += _inline_labels(natural)
     if _rt is not None:   # labels split over lines ("UNDER SECRETARY CATHY\nNOVELLI\n:")
         labels += [(max(t.start - 1, 0), t.label) for t in _rt.segment(natural, stop_at_footer=False)
                    if t.label]
@@ -269,14 +284,18 @@ def remove_foreign_paragraphs(sos: str, natural: str, secretary: str) -> str:
     return text
 
 
+_SECTION_HEADING_LABEL_RE = re.compile(r'^(?:[IVX]{1,4}\.?\s|PART\s|SECTION\s|ANNEX|APPENDIX)')
+
+
 def _turn_labels(natural: str) -> list[tuple[int, str]]:
-    labels = [(m.start(), m.group(1)) for m in _LINE_START_LABEL_RE.finditer(natural)]
-    labels += [(m.start(), m.group(1)) for m in _INLINE_LABEL_RE.finditer(natural)
-               if _plausible_inline_label(m.group(1), natural, m.start())]
+    labels = [(m.start(), m.group(1)) for m in _LINE_START_LABEL_RE.finditer(natural)
+              if not _SECTION_HEADING_LABEL_RE.match(m.group(1).strip())]
+    labels += _inline_labels(natural)
     if _rt is not None:
         labels += [(max(t.start - 1, 0), t.label) for t in _rt.segment(natural, stop_at_footer=False)
                    if t.label]
-    return sorted(labels)
+    return sorted((p, l) for p, l in labels if not _SECTION_HEADING_LABEL_RE.match(l.strip())
+                  and not {'TEXT', 'BEGIN', 'END'} & set(l.upper().split()))
 
 
 def drop_vocative_remainders(sos: str, natural: str, secretary: str, raw: str = '') -> str:
@@ -403,8 +422,7 @@ _LINE_LABEL_RE = re.compile(r"^\s*([A-Z][A-Z .'’\-]{1,60}?)\s*(?:\([^()\n]{0,3
 def _has_inline_label(text: str) -> bool:
     """A speaker label anywhere in the text, mid-line included ("... Good evening.
     AUDIENCE: Good evening. SECRETARY CLINTON: And Minister ...")."""
-    return any(_plausible_inline_label(m.group(1), text, m.start())
-               for m in _INLINE_LABEL_RE.finditer(text or ''))
+    return bool(_inline_labels(text))
 
 
 def restore_statement_start(text: str, raw: str, title: str = '', secretary: str = '') -> str | None:
@@ -678,7 +696,6 @@ def repair_row(row: dict) -> tuple[dict, list[str]]:
         from corpus_finalize_v4_30 import strip_stage_directions
         step('sos_from_natural', strip_stage_directions(rebuilt))
     step('page_chrome', strip_chrome(sos), strip_chrome(nat))
-    step('paragraph_starts', tidy_paragraph_starts(sos), tidy_paragraph_starts(nat))
     if sos != nat:  # a transcript: SOS Text is the Secretary's turns only
         rebuilt = sos_from_labelled_natural(sos, nat, sec)
         if rebuilt is not None:
@@ -690,6 +707,10 @@ def repair_row(row: dict) -> tuple[dict, list[str]]:
         step('other_speaker_turns', remove_foreign_paragraphs(sos, nat_l, sec))
         step('other_speaker_turns', remove_foreign_paragraphs(sos, nat_l, sec))
         step('vocative_remainder', drop_vocative_remainders(sos, nat_l, sec, join_split_labels(raw)))
+        step('other_speaker_turns', remove_foreign_sentences(sos, nat, sec))
+    # after the other-speaker passes: joining a comma-led paragraph onto the one
+    # before would hide a vocative question from them
+    step('paragraph_starts', tidy_paragraph_starts(sos), tidy_paragraph_starts(nat))
     step('stage_directions', strip_combined_stage(sos))
     step('cut_start', restore_cut_start(sos, raw) or restore_cut_start(sos, nat),
          restore_cut_start(nat, raw))
@@ -719,13 +740,82 @@ def repair_row(row: dict) -> tuple[dict, list[str]]:
 # Verifier detectors (corpus_verify_research_grade Checks AK-AM)
 # ---------------------------------------------------------------------------
 
+def _speaker_grams(natural: str, secretary: str, k: int = 6) -> tuple[set, set] | None:
+    """(the Secretary's k-word sequences, everyone else's) in Natural Text; None when
+    it has no speaker labels."""
+    nat = join_split_labels(natural)
+    labels = _turn_labels(nat)
+    if not labels:
+        return None
+    mine, other = set(), set()
+    bounds = [p for p, _ in labels] + [len(nat)]
+    for (p, lab), end in zip(labels, bounds[1:]):
+        t = _gram_tokens(nat[p:end])
+        grams = {tuple(t[i:i + k]) for i in range(len(t) - k + 1)}
+        (mine if is_secretary_label(lab, secretary) else other).update(grams)
+    return mine, other - mine
+
+
+def _gram_tokens(text: str) -> list[str]:
+    return [w.lower() for w in _COV_WORD_RE.findall(_PAREN_NOTE_RE.sub(' ', text).replace('’', "'"))]
+
+
+def remove_foreign_sentences(sos: str, natural: str, secretary: str, k: int = 6) -> str:
+    """Last pass for other speakers' words, independent of how SOS Text is split into
+    paragraphs: drop each SOS sentence most of whose k-word sequences Natural Text has
+    only in other speakers' turns. Skipped when the Secretary has no labelled turn, or
+    when fewer than 50 words would remain."""
+    if not sos or sos == natural:
+        return sos
+    g = _speaker_grams(natural, secretary, k)
+    if g is None or not g[0] or not g[1]:
+        return sos   # no labelled turn of the Secretary: unlabelled words of theirs would look foreign
+    foreign = g[1]
+    parts = re.split(r'(?<=[.?!])(\s+)', sos)
+    out, dropped = [], 0
+    for part in parts:
+        t = _gram_tokens(part)
+        grams = [tuple(t[i:i + k]) for i in range(len(t) - k + 1)]
+        if grams and sum(x in foreign for x in grams) / len(grams) >= 0.5:
+            dropped += len(part.split())
+            continue
+        out.append(part)
+    if not dropped or len(sos.split()) - dropped < 50:
+        return sos   # would leave almost nothing: left for review
+    text = ''.join(out)
+    text = re.sub(r'[ \t]+\n', '\n', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return re.sub(r'^\s+|\s+$', '', re.sub(r'  +', ' ', text))
+
+
+def foreign_leak_words(sos: str, natural: str, secretary: str, k: int = 6) -> int:
+    """SOS words covered by a k-word sequence that Natural Text has only in other
+    speakers' turns -- independent of how SOS Text is split into paragraphs."""
+    if not sos or sos == natural:
+        return 0
+    g = _speaker_grams(natural, secretary, k)
+    if g is None:
+        return 0
+    foreign = g[1]
+    t = _gram_tokens(sos)
+    hit = [False] * len(t)
+    for i in range(len(t) - k + 1):
+        if tuple(t[i:i + k]) in foreign:
+            for j in range(i, i + k):
+                hit[j] = True
+    return sum(hit)
+
+
 def text_problems(row: dict) -> list[str]:
-    """Why this row's text is not clean, by the same rules that repair it: the
-    repairs repair_row would still make, plus SOS Text that is mostly not on the
-    row's own page. [] for a clean row."""
+    """Why this row's text is not clean: the repairs repair_row would still make,
+    SOS Text that is mostly not on the row's own page, and -- independent of the
+    repairs, so a repair that hides a leak cannot also hide it from the check -- 20+
+    SOS words that Natural Text has only in other speakers' turns. [] if clean."""
     _, fired = repair_row(row)
     problems = sorted(set(fired))
     sos = row.get('SOS Text', '') or ''
     if len(sos.split()) > 30 and coverage(sos, normalize_encoding(row.get('Raw Text', '') or '')) < 0.5:
         problems.append('sos_not_on_page')
+    if foreign_leak_words(sos, row.get('Natural Text', '') or '', row.get('Secretary', '')) >= 20:
+        problems.append('other_speaker_words')
     return problems

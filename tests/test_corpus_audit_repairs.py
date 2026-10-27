@@ -272,3 +272,23 @@ def test_statement_start_never_restores_a_transcript():
            'thank you. (Applause.) Today HIV, and new infections are on the rise again in the region.')
     assert ar.restore_statement_start('and new infections are on the rise again in the region.', raw) is None
     assert ar._has_inline_label('Good evening. AUDIENCE: Good evening. SECRETARY CLINTON: And')
+
+
+LONG = ('We are grateful for everything this embassy community does, in good times and in hard ones, '
+        'and I want every one of you to know how much the whole department values the work you do here.')
+
+
+def test_inline_label_after_swallowed_word_and_foreign_detector():
+    """8109: "... Model UN. SECRETARY KERRY: Oh, no." -- the match swallows "UN."; the
+    label is still found, so Kerry's words are his, not Ms. Norton's."""
+    nat = ('AMBASSADOR MCFAUL: Please welcome the Secretary of State today and thank you all.\n'
+           'SECRETARY KERRY: Thank you very much. Thanks for the job you are doing here in Moscow. '
+           'MS. NORTON: Model UN. SECRETARY KERRY: Oh, no. He is at the model UN conference in '
+           'Helsinki this week with the rest of the delegation from the embassy school. ' + LONG)
+    sos = ('Thank you very much. Thanks for the job you are doing here in Moscow.\n\nOh, no. He is at the '
+           'model UN conference in Helsinki this week with the rest of the delegation from the embassy school. ' + LONG)
+    assert ar.foreign_leak_words(sos, nat, 'Kerry') == 0
+    assert ar.remove_foreign_sentences(sos, nat, 'Kerry') == sos
+    leaked = sos + '\n\nPlease welcome the Secretary of State today and thank you all.'
+    assert ar.foreign_leak_words(leaked, nat, 'Kerry') >= 10
+    assert ar.remove_foreign_sentences(leaked, nat, 'Kerry') == sos
