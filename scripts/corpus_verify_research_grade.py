@@ -48,6 +48,16 @@ except BaseException as _rcr_err:  # same reasoning as the import above
 else:
     _RCR_IMPORT_ERROR = ''
 
+# Checks AK-AM (the 2026-10-27 whole-corpus audit's detectors). Guarded the same way.
+try:
+    import corpus_audit_repairs as _car  # type: ignore[import]
+    from corpus_enrich_v1 import is_not_a_person as _not_a_person  # type: ignore[import]
+except BaseException as _car_err:
+    _car = None
+    _CAR_IMPORT_ERROR = f'{type(_car_err).__name__}: {_car_err}'
+else:
+    _CAR_IMPORT_ERROR = ''
+
 # Check AJ (Title is the page headline). Stdlib only, but guarded the same way.
 try:
     import corpus_title as _ct  # type: ignore[import]
@@ -61,7 +71,7 @@ csv.field_size_limit(10 ** 8)
 
 # Base columns an audited patch (--allow-changed-rows) may change, and the audit
 # "field" value that marks a row the patch removed (Row Id = its baseline id).
-Q_PATCHABLE_FIELDS = ('SOS Text', 'Natural Text', 'Title', 'Date', 'Location')
+Q_PATCHABLE_FIELDS = ('SOS Text', 'Natural Text', 'Title', 'Date', 'Location', 'Speech Type')
 Q_REMOVED_FIELD = '(row removed)'
 
 EXPECTED_COLUMNS = [
@@ -216,7 +226,7 @@ def main() -> None:
                      help='Audit CSV from a deliberate text patch (columns Row Id, field). '
                           'Check Q then accepts a baseline difference in exactly those '
                           '(Row Id, field) pairs -- and only in SOS Text / Natural Text / Title / '
-                          'Date / Location -- and still fails on any other difference. Rows with '
+                          'Date / Location / Speech Type -- and still fails on any other difference. Rows with '
                           'field "(row removed)" (baseline Row Id) may be missing; the baseline is '
                           'then renumbered without them before comparing.')
     # ── Rubio coverage checks AC-AI (all opt-in; see the block before the date-gap check)
@@ -254,6 +264,15 @@ def main() -> None:
                           '--baseline is given), WARN for titles unchanged since --baseline.')
     ap.add_argument('--strict-titles', action='store_true',
                      help='Like --titles, but unchanged legacy titles FAIL too.')
+    ap.add_argument('--audit-checks', action='store_true',
+                     help='Checks AK-AM, from the 2026-10-27 distribution audit: AK text a repair in '
+                          'corpus_audit_repairs would still change (other speakers in SOS Text, lost '
+                          'openings, stage directions, chrome ...) or SOS Text mostly not on its own '
+                          'page; AL People Mentioned values that are not people; AM SOS Text whose '
+                          'vocabulary is an outlier for its length (warn only). AK/AL skip rows '
+                          'unchanged since --baseline.')
+    ap.add_argument('--strict-audit-checks', action='store_true',
+                     help='Like --audit-checks, but every row is checked and FAILs, legacy included.')
     ap.add_argument('--title-overrides', default=None,
                      help='Title overrides CSV (URL, status): an AJ failure on a URL listed '
                           'with status "unresolved" is a warning '
@@ -1260,6 +1279,70 @@ def main() -> None:
         if aj['allow']:
             print(f'  warn  Check AJ: {label}: {len(aj["allow"])} row(s) listed unresolved in '
                   f'{ov_path.name} — {aj["allow"][:10]}')
+
+    # Checks AK-AM — the 2026-10-27 whole-corpus audit as checks. AK runs the
+    # repairs of corpus_audit_repairs as detectors: a row is not clean if one of
+    # them would still change it (another speaker's turn or a vocative question in
+    # SOS Text, a lost opening or first word, a missed stage direction, page chrome,
+    # lost characters, Natural Text not covering SOS Text) or if its SOS Text is
+    # mostly not on its own page. AL: People Mentioned values that are not people.
+    # AM: rows whose vocabulary is an outlier for their length (Heaps' law), warn
+    # only -- an outlier is a lead, not an error. Without --strict-audit-checks only
+    # rows new or changed since --baseline are checked (AK costs ~0.05 s a row).
+    if not (args.audit_checks or args.strict_audit_checks):
+        print('  skip  Checks AK-AM: no --audit-checks given, audit checks not run')
+    elif _car is None:
+        fail(f'Checks AK-AM: corpus_audit_repairs.py not importable ({_CAR_IMPORT_ERROR})')
+    else:
+        _txt = ('SOS Text', 'Natural Text', 'Raw Text', 'Title')
+        base_txt: dict[str, tuple] = {}
+        if args.baseline and not args.strict_audit_checks:
+            base_txt = {b.get('URL', ''): tuple(b.get(c, '') for c in _txt) + (
+                b.get('People Mentioned (Natural Text)', ''), b.get('People Mentioned (SOS Text)', ''))
+                for b in baseline_rows.values()}
+        ak, al, legacy_n = [], [], 0
+        for r in rows:
+            key = tuple(r.get(c, '') for c in _txt) + (
+                r.get('People Mentioned (Natural Text)', ''), r.get('People Mentioned (SOS Text)', ''))
+            if base_txt.get(r.get('URL', '')) == key:
+                legacy_n += 1
+                continue
+            probs = _car.text_problems(r)
+            if probs:
+                ak.append((r.get('Row Id'), '+'.join(probs)))
+            bad = [v for c in ('People Mentioned (Natural Text)', 'People Mentioned (SOS Text)')
+                   for v in (r.get(c, '') or '').split('; ') if v and _not_a_person(v)]
+            if bad:
+                al.append((r.get('Row Id'), '; '.join(sorted(set(bad))[:3])))
+        scope = ('every row' if args.strict_audit_checks or not args.baseline
+                 else f'{len(rows) - legacy_n} new/changed row(s); {legacy_n} unchanged since --baseline skipped')
+        for code, found, label in (
+                ('AK', ak, 'text a corpus_audit_repairs repair would still change, or SOS Text not on its own page'),
+                ('AL', al, 'People Mentioned values that are not people')):
+            if found:
+                fail(f'Check {code}: {label}: {len(found)} row(s) ({scope}), sample {found[:10]}')
+            else:
+                ok(f'Check {code}: no row with {label} ({scope})')
+        # AM — vocabulary outliers for length across the whole corpus (warn only)
+        import math
+        pts = []
+        for r in rows:
+            w = re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)?", (r.get('SOS Text') or '').lower())
+            if len(w) >= 20:
+                pts.append((r.get('Row Id'), math.log(len(w)), math.log(len(set(w)))))
+        if len(pts) > 2:
+            mx = sum(p[1] for p in pts) / len(pts); my = sum(p[2] for p in pts) / len(pts)
+            sxx = sum((p[1] - mx) ** 2 for p in pts) or 1.0
+            b1 = sum((p[1] - mx) * (p[2] - my) for p in pts) / sxx
+            a1 = my - b1 * mx
+            sd = math.sqrt(sum((p[2] - a1 - b1 * p[1]) ** 2 for p in pts) / (len(pts) - 2)) or 1.0
+            out_rows = [(rid, round((y - a1 - b1 * x) / sd, 1)) for rid, x, y in pts
+                        if abs((y - a1 - b1 * x) / sd) >= 4]
+            if out_rows:
+                print(f'  warn  Check AM: SOS Text vocabulary is an outlier for its length (|z| >= 4, '
+                      f"Heaps' law; repetition or word lists): {len(out_rows)} row(s) — {out_rows[:10]}")
+            else:
+                ok('Check AM: no SOS Text vocabulary outlier for its length')
 
     # Check AH — listing reconciliation. Every href the archive walk listed (on or
     # after the discovery window's since date) must be accounted for: in the

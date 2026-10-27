@@ -266,8 +266,16 @@ _SENTINEL_CANON = {'A PARTICIPANT': 'PARTICIPANT'}
 _NAME_CASE_FIXUP_RE = re.compile(r"\b(Mc|O')([a-z])")
 
 
+# str.title() also capitalises after an apostrophe ("SA'AR" -> "Sa'Ar", "ABC'S" ->
+# "Abc'S"); after two or more letters (not D'Alema, O'Brien) the letter after an
+# apostrophe goes back to lower case, before the
+# Mc-/O' fixup restores O'Brien.
+_AFTER_APOSTROPHE_RE = re.compile(r"(?<=[A-Za-z]{2})(['’])([A-Z])")
+
+
 def _titlecase(s: str) -> str:
-    return _NAME_CASE_FIXUP_RE.sub(lambda m: m.group(1) + m.group(2).upper(), s.title())
+    t = _AFTER_APOSTROPHE_RE.sub(lambda m: m.group(1) + m.group(2).lower(), s.title())
+    return _NAME_CASE_FIXUP_RE.sub(lambda m: m.group(1) + m.group(2).upper(), t)
 
 _HONORIFIC_RE = re.compile(r'^(?:MR|MS|MRS|DR)\.?\s+', re.IGNORECASE)
 _SEC_GENERAL_RE = re.compile(r'^SECRETARY[\s-]+GENERAL\b\s*(.*)$', re.IGNORECASE)
@@ -314,7 +322,18 @@ def _plausible_label(raw_match_text: str) -> bool:
     core = raw_match_text.strip()
     if '\n' in core:
         return False
+    if _SECTION_HEADING_RE.match(core):
+        return False  # "I.  INTRODUCTION:" -- a numbered section of a written text
     return len(core.split()) <= _MAX_LABEL_WORDS
+
+
+# A section heading of a written text ("I. Introduction", "IV. Conclusion").
+_SECTION_HEADING_RE = re.compile(r'^[IVX]{1,4}\.\s')
+# A label whose match ran back over the end of the previous sentence
+# ("... Rumsfeld would tell you. MR. DONALDSON:"): the label is the last sentence.
+_LABEL_AFTER_SENTENCE_RE = re.compile(
+    r'^.*[a-z)][.?!]\s+(?=(?:MR|MS|MRS|DR|SECRETARY|QUESTION|MODERATOR|PRESIDENT|PRIME|'
+    r'FOREIGN|AMBASSADOR|SENATOR|CHAIRMAN|GENERAL|MINISTER)\b)', re.IGNORECASE)
 
 
 def extract_speaker_turns(text: str) -> list[tuple[str, str, int, int]]:
@@ -342,7 +361,8 @@ def extract_speaker_turns(text: str) -> list[tuple[str, str, int, int]]:
         return []
     turns: list[tuple[str, str, int, int]] = []
     for i, m in enumerate(all_labels):
-        label = re.sub(r'[\s|:]+$', '', m.group(0).upper()).strip()
+        label = _LABEL_AFTER_SENTENCE_RE.sub('', m.group(0))
+        label = re.sub(r'[\s|:]+$', '', label.upper()).strip()
         start = m.end()
         end = all_labels[i + 1].start() if i + 1 < len(all_labels) else len(text)
         turns.append((label, text[start:end].strip(' |\n\t'), start, end))
@@ -913,6 +933,59 @@ _BARE_TITLE_NAMES = {'minister', 'secretary', 'council'}
 # false positives observed, not the word "House" in general.
 _NOT_A_PERSON_EXACT = {'blair house', 'spaso house', 'freedom house', 'united nations'}
 
+# Values spaCy tags PERSON that are not people, found by the 2026-10-27 value-
+# distribution audit of People Mentioned (every value used by 2+ rows reviewed,
+# most frequent first). Places, groups and demonyms, agreements and events,
+# greetings and bare titles. Ambiguous names (Austin, Hamilton, Madison, Jordan
+# as a surname is rare here but Lloyd Austin is not) are kept unless the place
+# reading dominates: bare "Jordan" (123 rows) is the country.
+_NOT_A_PERSON_AUDIT = {
+    # places
+    'jordan', 'sierra leone', 'mali', 'goma', 'gabon', 'normandy', 'davos', 'niger', 'ho chi minh city',
+    'juba', 'banja luka', 'camp david', 'abuja', 'erez', 'pristina', 'saint lucia', 'eswatini', 'togo',
+    'chiang mai', 'freetown', 'whistler', 'lisbon', 'montenegro', 'aspen', 'nay pyi taw', 'naypyidaw',
+    'cucuta', 'casablanca', 'xian', 'halabja', 'madagascar', 'stellarton', 'wellesley', 'kazan',
+    'hafr al batin', 'boa vista', 'honiara', 'yahidne', 'nashua', 'dar es salaam', 'italy', 'ferizaj',
+    'miyazaki', 'ljubljana', 'united arab emirates', 'lyon', 'mclean', 'ashgabat', 'ireland', 'sigonella',
+    'helsinki', 'bandar seri begawan', 'washington', 'sokoto', 'beirut', 'bellinzona', 'bern',
+    'nur-sultan', 'grenada', 'niamey', 'colombo', 'cotonou', 'sde boker', 'niue', 'praia',
+    'joint base andrews', 'timor-leste', 'dili', 'anchorage', 'yongbyon', 'rafah', 'swat', 'samarra',
+    'bucha', 'luhansk', 'srebrenica', 'transnistria', 'grozny', 'azores', 'maidan', 'rio', 'principe',
+    'fata', 'al-aqsa', 'rok',
+    # groups, demonyms, organisations
+    'quartet', 'boko haram', 'al-shabaab', 'al-shabab', 'al-qaidas', "al-qa'ida", 'al-nusrah', 'daesh',
+    'jingaweit', 'houthis', 'yezidis', "baha'is", 'kosovars', 'kazakhs', 'kansans', 'kurd', 'allies',
+    'beatles', 'duma', 'rada', 'majlis', 'unga', 'seeds of peace',
+    # agreements, programmes, events, concepts
+    'roadmap', 'brexit', 'abraham accords', 'generalized system of preferences', "st. patrick's day",
+    'migration', 'islam', 'godspeed', 'god',
+    # greetings and bare titles
+    'excellencies', 'majesty', 'ayatollah', 'muchas', 'gracias', 'buenas', 'jr',
+}
+# Lower-case words that legitimately start a name ("al-Sisi", "bin Laden", "de Klerk").
+_NAME_PARTICLES = ('al-', 'al ', 'bin ', 'ibn ', 'de ', 'del ', 'dos ', 'da ', 'van ', 'von ', 'la ',
+                   'le ', 'el-', 'el ', 'abu ', 'ben ')
+
+
+def is_not_a_person(name: str) -> bool:
+    """True for a People Mentioned value that is not a person: a known non-person
+    (above), a value opening with a lower-case word that is not a name particle
+    ("these Abraham Accords", "post-Saddam", "anti-Semitism"), or one ending in a
+    dangling "of" ("Ally of")."""
+    low = (name or '').strip().lower()
+    if not low:
+        return True
+    if low in _NOT_A_PERSON_EXACT or low in _NOT_A_PERSON_AUDIT:
+        return True
+    if name[0].islower() and not low.startswith(_NAME_PARTICLES):
+        return True
+    return low.endswith(' of')
+
+
+def filter_people(value: str) -> str:
+    """A People Mentioned cell without its non-person entries."""
+    return '; '.join(v for v in (value or '').split('; ') if v and not is_not_a_person(v))
+
 # A multi-word span ending in one of these institutional/organizational
 # words is a reference to an INSTITUTION, not a direct mention of the
 # person whose name it may contain -- e.g. "Obama Administration" is a
@@ -1132,7 +1205,7 @@ def people_mentioned(
             if audit_log is not None:
                 audit_log.append((ent.text, 'dropped', 'empty-or-too-long', ''))
             continue
-        if name.lower() in _BARE_TITLE_NAMES or name.lower() in _NOT_A_PERSON_EXACT or _ORG_SUFFIX_RE.search(name):
+        if name.lower() in _BARE_TITLE_NAMES or is_not_a_person(name) or _ORG_SUFFIX_RE.search(name):
             if audit_log is not None:
                 audit_log.append((ent.text, 'dropped', 'bare-title-or-org', ''))
             continue
