@@ -141,3 +141,89 @@ def test_not_labels_are_left_alone():
     assert ar.remove_inline_other_turns(sos, nat, 'Rubio') == sos
     stmt = 'Joint statement on the study:\nBEGIN TEXT:\nThe study was clearly unethical. We are outraged.'
     assert ar.remove_other_turns(stmt, stmt + '\nSECRETARY CLINTON: x', 'Clinton') == stmt
+
+
+def test_remove_foreign_paragraphs_vocative_question():
+    """The old extraction took "Secretary Kerry" in a question for his label, so the
+    rest of the question became SOS Text."""
+    nat = ('SECRETARY KERRY: Thank you all.\nQUESTION:\nSecretary Kerry, is there any more news '
+           'on Syria today?\nSECRETARY KERRY:\nThe basic ceasefire is holding, but fragile.')
+    sos = 'Thank you all.\n\n, is there any more news on Syria today?\n\nThe basic ceasefire is holding, but fragile.'
+    out = ar.remove_foreign_paragraphs(sos, nat, 'Kerry')
+    assert out == 'Thank you all.\n\nThe basic ceasefire is holding, but fragile.'
+    # the Secretary's label after a dash mid-line is still his
+    nat2 = 'MR. RUSSERT: So we would meet you - SECRETARY ALBRIGHT: We really have not determined that.'
+    sos2 = 'We really have not determined that.'
+    assert ar.remove_foreign_paragraphs(sos2, nat2, 'Albright') == sos2
+
+
+def test_restore_statement_start_from_release_line():
+    raw = ('Secretary of State Madeleine K. Albright Statement on death of Israeli school children '
+           'Washington, D.C., March 13, 1997 As released by the Office of the Spokesman U.S. Department '
+           'of State I would like to add my own feelings of shock. Any violent act of this magnitude '
+           'inspires outrage and sorrow. Released on March 13')
+    text = 'act of this magnitude inspires outrage and sorrow.'
+    out = ar.restore_statement_start(text, raw)
+    assert out == 'I would like to add my own feelings of shock. Any violent act of this magnitude inspires outrage and sorrow.'
+    assert ar.restore_statement_start('(In progress) words', raw) is None
+
+
+def test_restore_turn_head_and_foreign_fragment():
+    nat = 'SECRETARY POMPEO:\nGood morning, everyone. Welcome to the State Department today.'
+    assert ar.restore_turn_head('morning, everyone. Welcome to the State Department today.', nat, 'Pompeo') == \
+        'Good morning, everyone. Welcome to the State Department today.'
+    nat2 = ('MINISTER PARK: We discussed many issues today. Secretary Albright and I had an extensive '
+            'discussion on other issues of mutual concern.\nSECRETARY ALBRIGHT: Thank you very much. I am delighted.')
+    sos2 = 'and I had an extensive discussion on other issues of mutual concern.\n\nThank you very much. I am delighted.'
+    assert ar.drop_leading_foreign_fragment(sos2, nat2, 'Albright') == 'Thank you very much. I am delighted.'
+
+
+def test_sos_from_natural_when_sos_is_another_page():
+    raw = 'Header\nRussia held an election in an environment of repression and fear across the country. Footer'
+    nat = 'Russia held an election in an environment of repression and fear across the country.'
+    sos = ('Thank you very much President Yoon for hosting this third Summit for Democracy and for the '
+           'extraordinary spirit we just saw a few moments ago in this hall today.')
+    assert ar.sos_from_natural(sos, nat, raw, 'Blinken') == nat
+    assert ar.sos_from_natural(nat, nat, raw, 'Blinken') is None
+
+
+def test_not_a_person_filter():
+    from corpus_enrich_v1 import filter_people, is_not_a_person
+    assert filter_people('Obama; Quartet; Sierra Leone; al-Sisi; these Abraham Accords; Ally of; Lloyd Austin') == \
+        'Obama; al-Sisi; Lloyd Austin'
+    assert not is_not_a_person('bin Laden') and not is_not_a_person('de Klerk')
+
+
+def test_distribution_audit_smoke(tmp_path):
+    import corpus_distribution_audit as da
+    rows = [{'Row Id': str(i), 'Secretary': 'Kerry', 'Title': f't{i}', 'Speech Type': 'Remarks',
+             'Location': 'Washington, D.C.', 'Date': '2014-01-01',
+             'SOS Text': f'word{i} ' + 'the quick brown fox jumps over the lazy dog again ' * 3,
+             'Natural Text': f'word{i} ' + 'the quick brown fox jumps over the lazy dog again ' * 3,
+             'Raw Text': f'word{i} ' + 'the quick brown fox jumps over the lazy dog again ' * 3,
+             'Speakers Present': 'Kerry', 'People Mentioned (Natural Text)': '',
+             'People Mentioned (SOS Text)': '', 'Countries Mentioned': ''} for i in range(30)]
+    summary = da.audit(rows, tmp_path, boiler_min_rows=25)
+    assert 'boilerplate 8-grams in >= 25 rows: ' in summary
+    assert (tmp_path / 'rows.csv').exists() and (tmp_path / 'near_duplicates.csv').exists()
+
+
+def test_secretary_label_typos_and_one_word_labels():
+    """821 "SECRETARY ABRIGHT", Rubio 17658 "SECRETARY RUBI", Powell 1739 "SECRETARY :"."""
+    assert ar.is_secretary_label('SECRETARY ABRIGHT', 'Albright')
+    assert ar.is_secretary_label('SECRETARY RUBI', 'Rubio')
+    assert ar.is_secretary_label('SECREATRY RUBIO', 'Rubio')
+    assert ar.is_secretary_label('SECRETARY', 'Powell')
+    assert not ar.is_secretary_label('MRS RUBIO', 'Rubio')
+    assert not ar.is_secretary_label('SECRETARY RUBIN', 'Albright')
+    assert not ar.is_secretary_label('PRESIDENT RICE', 'Rice')
+    nat = ('QUESTION: Mr. Secretary, can you persuade them to talk first? SECRETARY : We are going to have '
+           'good conversations today, and I look forward to it.')
+    sos = 'We are going to have good conversations today, and I look forward to it.'
+    assert ar.remove_foreign_paragraphs(sos, nat, 'Powell') == sos
+
+
+def test_foreign_removal_never_empties_a_row():
+    nat = 'QUESTION: Secretary Kerry, is there any more news on Syria today and tomorrow?'
+    sos = ', is there any more news on Syria today and tomorrow?'
+    assert ar.remove_foreign_paragraphs(sos, nat, 'Kerry') == sos

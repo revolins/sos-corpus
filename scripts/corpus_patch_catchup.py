@@ -39,7 +39,8 @@ from collections import Counter
 from pathlib import Path
 
 from corpus_audit_repairs import repair_row
-from corpus_enrich_v1 import enrich_row, enrich_rows_ner, get_nlp, read_csv, speakers_present, write_manifest
+from corpus_enrich_v1 import (enrich_row, enrich_rows_ner, filter_people, get_nlp, read_csv,
+                              speakers_present, write_manifest)
 from corpus_finalize_v4_30 import (
     normalize_encoding,
     strip_boilerplate,
@@ -153,6 +154,25 @@ def refresh_speakers(rows: list[dict]) -> list[dict]:
     return audit
 
 
+PEOPLE_COLUMNS = ('People Mentioned (Natural Text)', 'People Mentioned (SOS Text)')
+
+
+def refresh_people(rows: list[dict]) -> list[dict]:
+    """People Mentioned without the non-persons the 2026-10-27 value-distribution audit
+    found (places, groups, agreements, greetings); not hashed."""
+    audit = []
+    for r in rows:
+        for c in PEOPLE_COLUMNS:
+            new = filter_people(r.get(c, ''))
+            if new != r.get(c, ''):
+                audit.append({'Row Id': r['Row Id'], 'Secretary': r.get('Secretary', ''),
+                              'URL': r.get('URL', ''), 'field': c,
+                              'old_value': r.get(c, '')[:_HEAD], 'new_value': new[:_HEAD],
+                              'reasons': 'not a person', 'source': 'corpus_enrich_v1'})
+                r[c] = new
+    return audit
+
+
 def remove_rows(rows: list[dict], fixes: list[dict], audit: list[dict]) -> tuple[list[dict], list[dict]]:
     """Drop the rows marked removed, renumber densely, and move audit Row Ids to
     the new numbering (removed rows keep their baseline id)."""
@@ -215,6 +235,7 @@ def main() -> None:
     if ner:
         enrich_rows_ner(list(ner.values()), get_nlp(args.spacy_model), incremental=False)
     audit += refresh_speakers(rows)
+    audit += refresh_people(rows)
     audit += apply_fixes(rows, fixes, POST_ENRICH_FIXES)
 
     rows, audit = remove_rows(rows, fixes, audit)

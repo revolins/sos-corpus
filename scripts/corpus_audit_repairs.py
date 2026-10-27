@@ -26,6 +26,7 @@ names of the repairs that fired.
 
 from __future__ import annotations
 
+import bisect
 import re
 
 from corpus_finalize_v4_30 import normalize_encoding
@@ -43,14 +44,32 @@ SURNAMES = {
 _NOT_SECRETARY = re.compile(r'\b(?:MRS|MS|SENATOR|GOVERNOR|AMBASSADOR|PRESIDENT|MR)\b')
 
 
+def _edit_distance(a: str, b: str) -> int:
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
 def is_secretary_label(label: str, secretary: str) -> bool:
+    """The row's own Secretary: "SECRETARY KERRY", "THE SECRETARY", and the page's
+    typos ("SECRETARY ABRIGHT", "SECRETARY RUBI", "SECREATRY RUBIO")."""
     lab = re.sub(r'[^A-Z ]', ' ', (label or '').upper())
     lab = ' '.join(lab.split())
     if lab in ('SECRETARY', 'THE SECRETARY', 'SECRETARY OF STATE'):
         return True
     sur = SURNAMES.get(secretary, '')
-    return bool(sur) and bool(re.search(rf'\b{sur}\b', lab)) and not _NOT_SECRETARY.search(
-        lab.replace('SECRETARY', ''))
+    if not sur or _NOT_SECRETARY.search(lab.replace('SECRETARY', '')):
+        return False
+    words = lab.split()
+    if sur in words:
+        return True
+    tol = 1 if len(sur) <= 5 else 2
+    return (any(len(w) >= 4 and _edit_distance(w, sur) <= tol for w in words)
+            and (len(words) == 1 or any(_edit_distance(w, 'SECRETARY') <= 2 for w in words)))
 
 
 def _ws(text: str) -> str:
@@ -99,7 +118,8 @@ _INLINE_LABEL_RE = re.compile(
 
 
 _ROLE_WORDS = frozenset({'QUESTION', 'MODERATOR', 'AUDIENCE', 'PARTICIPANT', 'PARTICIPANTS',
-                         'STUDENT', 'STUDENTS', 'TEACHER', 'REPORTER', 'INTERPRETER', 'SPEAKER'})
+                         'STUDENT', 'STUDENTS', 'TEACHER', 'REPORTER', 'INTERPRETER', 'SPEAKER',
+                         'SECRETARY', 'ANNOUNCER', 'STAFF'}) | frozenset(SURNAMES.values())
 _HONORIFICS = frozenset({'MR.', 'MS.', 'MRS.', 'DR.', 'ST.'})
 
 
@@ -108,7 +128,7 @@ def _plausible_inline_label(label: str, text: str, pos: int) -> bool:
     "BEGIN TEXT:": it starts a line or follows the end of a sentence, its words are
     letters (honorifics aside), and a one-word label is a known role."""
     before = text[max(0, pos - 3):pos]
-    if pos and not re.search(r'(?:^|\n|[.?!"”)\]]\s+)$', text[max(0, pos - 40):pos]) \
+    if pos and not re.search(r'(?:^|\n|[.?!"”)\]…:,;–—-]\s*|--\s*)$', text[max(0, pos - 40):pos]) \
             and not before.endswith('\n'):
         return False
     words = label.split()
@@ -159,6 +179,143 @@ def remove_inline_other_turns(sos: str, natural: str, secretary: str) -> str:
     return re.sub(r'  +', ' ', out).strip()
 
 
+_LINE_START_LABEL_RE = re.compile(r"(?m)^\s*([A-Z][A-Z .'’\-]{1,60}?)\s*(?:\([^()\n]{0,30}\)\s*)?:")
+
+
+def remove_foreign_paragraphs(sos: str, natural: str, secretary: str) -> str:
+    """Third pass for other speakers' words: an SOS paragraph that Natural Text puts
+    inside another speaker's turn. The old extraction took a vocative ("QUESTION:
+    Secretary Kerry, Syria's main opposition ...") for the Secretary's own label, so
+    the rest of the question became SOS Text. That turn's words, from where the
+    paragraph starts to the next label, are removed; any of the Secretary's words
+    merged into the same paragraph stay."""
+    labels = [(m.start(), m.group(1)) for m in _LINE_START_LABEL_RE.finditer(natural)]
+    labels += [(m.start(), m.group(1)) for m in _INLINE_LABEL_RE.finditer(natural)
+               if _plausible_inline_label(m.group(1), natural, m.start())]
+    if _rt is not None:   # labels split over lines ("UNDER SECRETARY CATHY\nNOVELLI\n:")
+        labels += [(max(t.start - 1, 0), t.label) for t in _rt.segment(natural, stop_at_footer=False)
+                   if t.label]
+    labels.sort()
+    if not labels:
+        return sos
+    starts = [p for p, _ in labels]
+    out = []
+    changed = False
+    for para in re.split(r'(\n\s*\n)', sos):
+        if not para.strip() or len(para.split()) < 4 or re.fullmatch(r'\n\s*\n', para):
+            out.append(para)
+            continue
+        m = (_raw_position(natural, para.strip()) or _raw_position(natural, para.strip(), 5)
+             if para.strip()[:1] in ',;' else _raw_position(natural, para.strip()))
+        k = bisect.bisect_right(starts, m.start()) - 1 if m else -1
+        if k < 0 or is_secretary_label(labels[k][1], secretary):
+            out.append(para)
+            continue
+        end = starts[k + 1] if k + 1 < len(starts) else len(natural)
+        words = _PAREN_NOTE_RE.sub(' ', natural[m.start():end]).split()
+        rest = None
+        for n in range(len(words), 0, -1):
+            g = re.match(r'\s*' + _ws(' '.join(words[:n])), para)
+            if g:
+                rest = para[g.end():].strip()
+                break
+        if rest is None:
+            out.append(para)
+            continue
+        changed = True
+        if rest:
+            out.append(rest)
+    if not changed:
+        return sos
+    text = ''.join(out)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r'^(?:\s*\n)+|(?:\n\s*)+$', '', text)
+    if len(text.split()) < 0.2 * len(sos.split()):
+        return sos   # would remove nearly everything: left for review, not repaired blind
+    return text
+
+
+def _turn_labels(natural: str) -> list[tuple[int, str]]:
+    labels = [(m.start(), m.group(1)) for m in _LINE_START_LABEL_RE.finditer(natural)]
+    labels += [(m.start(), m.group(1)) for m in _INLINE_LABEL_RE.finditer(natural)
+               if _plausible_inline_label(m.group(1), natural, m.start())]
+    if _rt is not None:
+        labels += [(max(t.start - 1, 0), t.label) for t in _rt.segment(natural, stop_at_footer=False)
+                   if t.label]
+    return sorted(labels)
+
+
+def drop_vocative_remainders(sos: str, natural: str, secretary: str, raw: str = '') -> str:
+    """Paragraphs that open with a comma are the rest of someone else's sentence after
+    "Secretary <Name>" ("QUESTION: Secretary Pompeo, thank you for having us." became
+    SOS ", thank you for having us. Hugh, it's great to be with you ..."). The speaker's
+    words up to the next label in Natural Text are removed; the Secretary's answer
+    merged into the same paragraph stays, and so does a comma-led paragraph that is
+    the Secretary's own (a statement whose subject or a hyperlinked word was lost):
+    text is removed only where the page puts it inside another speaker's labelled
+    turn -- Natural Text, else Raw Text. A comma-led line of eight words or fewer
+    (", welcome.", ", please.") is dropped outright."""
+    sur = SURNAMES.get(secretary, '')
+    if not sur or ',' not in sos:
+        return sos
+    sources = [natural] + ([raw] if raw else [])
+    out, changed = [], False
+    for part in re.split(r'(\n\s*\n)', sos):
+        q = part.strip()
+        if not q.startswith(','):
+            out.append(part)
+            continue
+        if len(q.split()) <= 8:
+            changed = True
+            continue
+        first = re.split(r'(?<=[.?!])\s', q, maxsplit=1)[0].split()[:12]
+        voc = re.compile(rf'Secretary\s+(?:of\s+State\s+)?(?:[A-Z][\w.\'’-]*\s+){{0,3}}{sur.title()}\s*'
+                         + r'(?:\s+|\s*\([^()\n]{0,40}\)\s*)+'.join(re.escape(w) for w in first))
+        words = None
+        for src in sources:
+            m = voc.search(src)
+            if not m:
+                continue
+            labels = _turn_labels(src)
+            starts = [x for x, _ in labels]
+            body_start = src.index(first[0], m.start())
+            k = bisect.bisect_right(starts, body_start)
+            if k == 0 or is_secretary_label(labels[k - 1][1], secretary):
+                break                       # not inside another speaker's turn
+            end = starts[k] if k < len(starts) else len(src)
+            words = _PAREN_NOTE_RE.sub(' ', src[body_start:end]).split()
+            break
+        if not words:
+            out.append(part)
+            continue
+        rest = None
+        for n in range(len(words), 0, -1):
+            g = re.match(r'\s*' + _ws(' '.join(words[:n])), q)
+            if g:
+                rest = q[g.end():].strip()
+                break
+        if rest is None:
+            out.append(part)
+            continue
+        changed = True
+        if rest:
+            out.append(rest)
+    if not changed:
+        return sos
+    text = re.sub(r'\n{3,}', '\n\n', ''.join(out))
+    text = re.sub(r'^(?:\s*\n)+|(?:\n\s*)+$', '', text)
+    return text if text.strip() else sos
+
+
+def strip_stray_punctuation(text: str) -> str:
+    """A paragraph that opens with the ":" of a label split over lines ("SECRETARY
+    ALBRIGHT\n: I depart ...") or the ")" of a broken note ("(As Delivered\n) Thank
+    you"), and lines that are only ":"."""
+    out = re.sub(r'(?m)^[ \t]*:[ \t]*\n', '', text)
+    out = re.sub(r'(?m)^([ \t]*)[:)][ \t]*(?=\S)', r'\1', out)
+    return out if out != text else text
+
+
 _STAGE_WORDS = r'(?:laughter|applause|cheers|cheering|crosstalk)'
 _COMBINED_STAGE_RE = re.compile(
     rf'\s*\(\s*{_STAGE_WORDS}(?:\s*(?:[,/&]|and|\.)\s*{_STAGE_WORDS})*\s*\.?\s*\)', re.I)
@@ -175,10 +332,12 @@ def strip_combined_stage(text: str) -> str:
 
 
 def _raw_position(raw: str, text: str, words: int = 8) -> re.Match | None:
-    head = ' '.join(text.split()[:words])
-    if len(head) < 12:
+    """Where text's first words sit in raw; stage notes such as "(Cheers.)" or
+    "(inaudible)", stripped from the text but kept on the page, may sit between them."""
+    head = text.split()[:words]
+    if len(' '.join(head)) < 12:
         return None
-    return re.search(_ws(head), raw)
+    return re.search(r'(?:\s+|\s*\([^()\n]{0,40}\)\s*)+'.join(re.escape(w) for w in head), raw)
 
 
 def restore_cut_start(text: str, raw: str) -> str | None:
@@ -199,6 +358,110 @@ def restore_cut_start(text: str, raw: str) -> str | None:
     if not missing or len(missing) > 20:
         return None
     return missing + body
+
+
+_MONTHS = 'January|February|March|April|May|June|July|August|September|October|November|December'
+# Where a written statement's text starts on the page: after its release line,
+# its "Share" widget or its dateline.
+_STATEMENT_START_RES = (
+    re.compile(r'As released by the Office of the Spokes(?:man|person)\s+U\.S\. Department of State\s*'),
+    re.compile(r'Share this page on:\s*'),
+    re.compile(rf'(?:{_MONTHS})\s+\d{{1,2}},\s+\d{{4}}\s*\n'),
+    re.compile(rf'(?:{_MONTHS})\s+\d{{1,2}},\s+\d{{4}}\s+(?=[A-Z])'),   # flattened 2001-2009 pages
+)
+_CHROME_WORDS_RE = re.compile(r'Other State Department Archive Sites|You are in:|Skip to|Subject Index|'
+                              r'Official websites use|Back to Top|Released on|Following are excerpts|'
+                              r'\[Also see')
+_LINE_LABEL_RE = re.compile(r"^\s*([A-Z][A-Z .'’\-]{1,60}?)\s*(?:\([^()\n]{0,30}\)\s*)?:\s*(.*)$")
+
+
+def restore_statement_start(text: str, raw: str, title: str = '', secretary: str = '') -> str | None:
+    """A label-free statement that starts mid-sentence (the old half-text fallback
+    cut it): put back what the page has between the statement's start (release
+    line, Share widget or dateline) and the cut. None when not provable."""
+    body = text.lstrip()
+    if (not body or not (body[0].islower() or body[0] in ',;')
+            or _LINE_LABEL_RE.match(body.split('\n', 1)[0])):
+        return None
+    m = _raw_position(raw, body)
+    if not m:
+        return None
+    head = raw[:m.start()]
+    starts = [x.end() for r in _STATEMENT_START_RES for x in r.finditer(head)]
+    if not starts:
+        return None
+    prefix = head[max(starts):]
+    title_m = re.match(r'\s*' + _ws(title), prefix) if title else None
+    if title_m and body[0].isalpha():   # the headline repeated (not a sentence's own subject)
+        prefix = prefix[title_m.end():]
+    lab = _LINE_LABEL_RE.match(prefix)                          # "SECREETARY ALBRIGHT:" (typo)
+    if lab and SURNAMES.get(secretary, '#') in lab.group(1).upper():
+        prefix = prefix[lab.start(2):]
+    if (not re.search(r'[A-Za-z]', _PAREN_NOTE_RE.sub('', prefix)) or len(prefix.split()) > 600
+            or _CHROME_WORDS_RE.search(prefix)
+            or any(_LINE_LABEL_RE.match(line) for line in prefix.split('\n'))):
+        return None
+    if prefix[-1:].isalpha():
+        return prefix + body
+    if body[0] in ',;':
+        return ' '.join(prefix.split()) + body
+    return prefix.rstrip() + ' ' + body
+
+
+def restore_turn_head(sos: str, natural: str, secretary: str) -> str | None:
+    """SOS Text whose first words were dropped after the Secretary's own label
+    ("SECRETARY POMPEO:\nGood\nmorning, everyone" -> SOS "morning, everyone"): put
+    back the few words between the label and the SOS start. None when not provable."""
+    body = sos.lstrip()
+    m = _raw_position(natural, body)
+    if not m:
+        return None
+    line_start = natural.rfind('\n', 0, m.start()) + 1
+    between = natural[line_start:m.start()]
+    lab = _LINE_LABEL_RE.match(between)
+    if lab:
+        if not is_secretary_label(lab.group(1), secretary):
+            return None
+        prefix = lab.group(2)
+    else:
+        prev = natural[:line_start].rstrip('\n').rsplit('\n', 1)[-1]
+        plab = _LINE_LABEL_RE.match(prev)
+        if not (plab and not plab.group(2).strip() and is_secretary_label(plab.group(1), secretary)):
+            return None
+        prefix = between
+    prefix = _PAREN_NOTE_RE.sub(' ', prefix).strip()
+    if not re.search(r'[A-Za-z]', prefix) or len(prefix.split()) > 12 or ':' in prefix:
+        return None
+    if not natural[m.start() - 1:m.start()].isspace():           # "It'" + "s an honor"
+        return prefix + body
+    return prefix + ' ' + body
+
+
+def drop_leading_foreign_fragment(sos: str, natural: str, secretary: str) -> str | None:
+    """SOS Text that opens with the rest of another speaker's sentence after a mention
+    of the Secretary ("Secretary Albright | and I had an extensive discussion", the old
+    extraction took "Secretary Albright" for a label): drop that speaker's turn from the
+    start of SOS Text. None when not provable."""
+    body = sos.lstrip()
+    if not body or not body[0].islower():
+        return None
+    m = _raw_position(natural, body)
+    sur = SURNAMES.get(secretary, '')
+    if not m or not sur or not re.search(rf'Secretary\s+(?:of\s+State\s+)?(?:[A-Z][a-z.]+\s+)*{sur.title()}\s*$',
+                                         natural[max(0, m.start() - 80):m.start()]):
+        return None
+    labels = [x for x in re.finditer(r"(?m)^\s*([A-Z][A-Z .'’\-]{1,60}?)\s*:", natural)]
+    before = [x for x in labels if x.start() < m.start()]
+    if not before or is_secretary_label(before[-1].group(1), secretary):
+        return None
+    after = [x for x in labels if x.start() > m.start()]
+    end = after[0].start() if after else len(natural)
+    words = _PAREN_NOTE_RE.sub(' ', natural[m.start():end]).split()
+    for n in range(len(words), 0, -1):
+        g = re.match(r'\s*' + _ws(' '.join(words[:n])), sos)
+        if g:
+            return sos[g.end():].lstrip()
+    return None
 
 
 def _anchor_end(raw: str, text: str, words: int = 8) -> int:
@@ -222,11 +485,43 @@ def _anchor_start(raw: str, text: str, before: int, words: int = 8) -> int:
     return -1
 
 
+_COV_WORD_RE = re.compile(r"[^\W_]+(?:'[^\W_]+)?")
+
+
+def _shingles(text: str, k: int = 5, by_paragraph: bool = False) -> set:
+    parts = re.split(r'\n\s*\n', text) if by_paragraph else [text]
+    out = set()
+    for part in parts:
+        t = [w.lower() for w in _COV_WORD_RE.findall(part.replace('’', "'"))]
+        out |= {tuple(t[i:i + k]) for i in range(len(t) - k + 1)}
+    return out
+
+
+def coverage(text: str, source: str, by_paragraph: bool = True) -> float:
+    """Share of text's 5-word sequences (within its paragraphs) found in source."""
+    a = _shingles(text, by_paragraph=by_paragraph)
+    return len(a & _shingles(source)) / len(a) if a else 1.0
+
+
+def sos_from_natural(sos: str, natural: str, raw: str, secretary: str) -> str | None:
+    """SOS Text that is not from this row's page at all (another item's text, e.g. 7467
+    "U.S.-Spain Council" carried the Rio+20 speech) while Natural Text is: rebuild SOS
+    Text from Natural Text -- the Secretary's turns, or all of it when unlabelled."""
+    if len(_shingles(sos)) < 20 or coverage(sos, raw) >= 0.1 or coverage(natural, raw, False) < 0.9:
+        return None
+    if _rt is not None:
+        turns = _rt.segment(natural, stop_at_footer=False)
+        if any(t.label for t in turns):
+            mine = [t.text.strip() for t in turns if t.label and is_secretary_label(t.label, secretary)]
+            return '\n\n'.join(x for x in mine if x) or None
+    return natural
+
+
 def extend_natural(natural: str, sos: str, raw: str) -> str | None:
     """Natural Text that ends (or starts) inside the SOS Text it should contain:
     the Raw Text from the earlier of their starts to the later of their ends.
     None when not provable."""
-    if len(natural.split()) >= len(sos.split()) * 0.9:
+    if len(natural.split()) >= len(sos.split()) * 0.9 and coverage(sos, natural) >= 0.9:
         return None
     ne, se = _anchor_end(raw, natural), _anchor_end(raw, sos)
     if min(ne, se) < 0:
@@ -253,6 +548,16 @@ def strip_chrome(text: str) -> str:
     """Page chrome left at the start ("... Secretary of State June 10, 2020 Share this
     page on:") or end (the Bureau of Public Affairs site footer) of a text."""
     return _TAIL_CHROME_RE.sub('', _LEAD_CHROME_RE.sub('', text))
+
+
+def tidy_paragraph_starts(text: str) -> str:
+    """Paragraph-start debris: the colon of a label split over lines ("SECRETARY ALBRIGHT\n:
+    Thank you" leaves ": Thank you"), the ")" of a half-stripped "(As Delivered)", and a
+    paragraph break the page puts before a comma at a hyperlink ("pursuant to Executive
+    Order 14098\n\n, which authorizes"), where the sentence runs on."""
+    out = re.sub(r'\s*\n\s*\n\s*(?=[,;.](?:\s|$))', '', text)
+    out = re.sub(r'(^|\n\s*\n)[ \t]*[:)][ \t]*', r'\1', out)
+    return out.lstrip() if out != text else text
 
 
 def fix_replacement_chars(text: str, raw: str) -> str:
@@ -297,7 +602,11 @@ def dedupe_paragraphs(text: str, raw: str) -> str:
 
 # Text the original scrape garbled in one row (3778: the "Q" of "Quartet" and
 # "al-Qaeda" turned into a fake QUESTION label).
-_KNOWN_GARBLES = {'theQUESTION: uartet': 'the Quartet', 'alQUESTION: aeda': 'al-Qaeda'}
+_KNOWN_GARBLES = {'theQUESTION: uartet': 'the Quartet', 'alQUESTION: aeda': 'al-Qaeda',
+                  # 684: the joint statement's subject was taken for a speaker label
+                  ', Estonian President Meri, Latvian President Ulmanis, and Lithuanian President Adamkus':
+                  'Secretary Albright, Estonian President Meri, Latvian President Ulmanis, and Lithuanian '
+                  'President Adamkus'}
 
 
 def _fix_garbles(text: str) -> str:
@@ -327,12 +636,32 @@ def repair_row(row: dict) -> tuple[dict, list[str]]:
 
     step('known_garbles', _fix_garbles(sos), _fix_garbles(nat))
     step('replacement_chars', fix_replacement_chars(sos, raw), fix_replacement_chars(nat, raw))
+    rebuilt = sos_from_natural(sos, nat, raw, sec)
+    if rebuilt is not None:
+        from corpus_finalize_v4_30 import strip_stage_directions
+        step('sos_from_natural', strip_stage_directions(rebuilt))
     step('page_chrome', strip_chrome(sos), strip_chrome(nat))
+    step('paragraph_starts', tidy_paragraph_starts(sos), tidy_paragraph_starts(nat))
     if sos != nat:  # a transcript: SOS Text is the Secretary's turns only
         step('other_speaker_turns', remove_other_turns(sos, nat, sec))
         step('other_speaker_turns', remove_inline_other_turns(sos, nat, sec))
+        step('other_speaker_turns', remove_foreign_paragraphs(sos, nat, sec))
+        step('other_speaker_turns', remove_foreign_paragraphs(sos, nat, sec))
+        step('vocative_remainder', drop_vocative_remainders(sos, nat, sec, raw))
+        step('stray_punctuation', strip_stray_punctuation(sos))
     step('stage_directions', strip_combined_stage(sos))
-    step('cut_start', restore_cut_start(sos, raw), restore_cut_start(nat, raw))
+    step('cut_start', restore_cut_start(sos, raw) or restore_cut_start(sos, nat),
+         restore_cut_start(nat, raw))
+    labelled = sos != nat and any(_LINE_LABEL_RE.match(x) for x in nat.split('\n')[:400])
+    if labelled:
+        step('foreign_fragment', drop_leading_foreign_fragment(sos, nat, sec)
+             or drop_leading_foreign_fragment(sos, raw, sec))
+        step('turn_head', restore_turn_head(sos, nat, sec))
+    else:
+        title = row.get('Title', '')
+        new_sos = restore_statement_start(sos, raw, title, sec)
+        step('statement_start', new_sos,
+             new_sos if (new_sos and sos == nat) else restore_statement_start(nat, raw, title, sec))
     ext = extend_natural(nat, sos, raw)
     step('natural_extended', None, ext)
     step('duplicate_paragraph', dedupe_paragraphs(sos, raw), dedupe_paragraphs(nat, raw))

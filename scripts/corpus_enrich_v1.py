@@ -933,6 +933,59 @@ _BARE_TITLE_NAMES = {'minister', 'secretary', 'council'}
 # false positives observed, not the word "House" in general.
 _NOT_A_PERSON_EXACT = {'blair house', 'spaso house', 'freedom house', 'united nations'}
 
+# Values spaCy tags PERSON that are not people, found by the 2026-10-27 value-
+# distribution audit of People Mentioned (every value used by 2+ rows reviewed,
+# most frequent first). Places, groups and demonyms, agreements and events,
+# greetings and bare titles. Ambiguous names (Austin, Hamilton, Madison, Jordan
+# as a surname is rare here but Lloyd Austin is not) are kept unless the place
+# reading dominates: bare "Jordan" (123 rows) is the country.
+_NOT_A_PERSON_AUDIT = {
+    # places
+    'jordan', 'sierra leone', 'mali', 'goma', 'gabon', 'normandy', 'davos', 'niger', 'ho chi minh city',
+    'juba', 'banja luka', 'camp david', 'abuja', 'erez', 'pristina', 'saint lucia', 'eswatini', 'togo',
+    'chiang mai', 'freetown', 'whistler', 'lisbon', 'montenegro', 'aspen', 'nay pyi taw', 'naypyidaw',
+    'cucuta', 'casablanca', 'xian', 'halabja', 'madagascar', 'stellarton', 'wellesley', 'kazan',
+    'hafr al batin', 'boa vista', 'honiara', 'yahidne', 'nashua', 'dar es salaam', 'italy', 'ferizaj',
+    'miyazaki', 'ljubljana', 'united arab emirates', 'lyon', 'mclean', 'ashgabat', 'ireland', 'sigonella',
+    'helsinki', 'bandar seri begawan', 'washington', 'sokoto', 'beirut', 'bellinzona', 'bern',
+    'nur-sultan', 'grenada', 'niamey', 'colombo', 'cotonou', 'sde boker', 'niue', 'praia',
+    'joint base andrews', 'timor-leste', 'dili', 'anchorage', 'yongbyon', 'rafah', 'swat', 'samarra',
+    'bucha', 'luhansk', 'srebrenica', 'transnistria', 'grozny', 'azores', 'maidan', 'rio', 'principe',
+    'fata', 'al-aqsa', 'rok',
+    # groups, demonyms, organisations
+    'quartet', 'boko haram', 'al-shabaab', 'al-shabab', 'al-qaidas', "al-qa'ida", 'al-nusrah', 'daesh',
+    'jingaweit', 'houthis', 'yezidis', "baha'is", 'kosovars', 'kazakhs', 'kansans', 'kurd', 'allies',
+    'beatles', 'duma', 'rada', 'majlis', 'unga', 'seeds of peace',
+    # agreements, programmes, events, concepts
+    'roadmap', 'brexit', 'abraham accords', 'generalized system of preferences', "st. patrick's day",
+    'migration', 'islam', 'godspeed', 'god',
+    # greetings and bare titles
+    'excellencies', 'majesty', 'ayatollah', 'muchas', 'gracias', 'buenas', 'jr',
+}
+# Lower-case words that legitimately start a name ("al-Sisi", "bin Laden", "de Klerk").
+_NAME_PARTICLES = ('al-', 'al ', 'bin ', 'ibn ', 'de ', 'del ', 'dos ', 'da ', 'van ', 'von ', 'la ',
+                   'le ', 'el-', 'el ', 'abu ', 'ben ')
+
+
+def is_not_a_person(name: str) -> bool:
+    """True for a People Mentioned value that is not a person: a known non-person
+    (above), a value opening with a lower-case word that is not a name particle
+    ("these Abraham Accords", "post-Saddam", "anti-Semitism"), or one ending in a
+    dangling "of" ("Ally of")."""
+    low = (name or '').strip().lower()
+    if not low:
+        return True
+    if low in _NOT_A_PERSON_EXACT or low in _NOT_A_PERSON_AUDIT:
+        return True
+    if name[0].islower() and not low.startswith(_NAME_PARTICLES):
+        return True
+    return low.endswith(' of')
+
+
+def filter_people(value: str) -> str:
+    """A People Mentioned cell without its non-person entries."""
+    return '; '.join(v for v in (value or '').split('; ') if v and not is_not_a_person(v))
+
 # A multi-word span ending in one of these institutional/organizational
 # words is a reference to an INSTITUTION, not a direct mention of the
 # person whose name it may contain -- e.g. "Obama Administration" is a
@@ -1152,7 +1205,7 @@ def people_mentioned(
             if audit_log is not None:
                 audit_log.append((ent.text, 'dropped', 'empty-or-too-long', ''))
             continue
-        if name.lower() in _BARE_TITLE_NAMES or name.lower() in _NOT_A_PERSON_EXACT or _ORG_SUFFIX_RE.search(name):
+        if name.lower() in _BARE_TITLE_NAMES or is_not_a_person(name) or _ORG_SUFFIX_RE.search(name):
             if audit_log is not None:
                 audit_log.append((ent.text, 'dropped', 'bare-title-or-org', ''))
             continue

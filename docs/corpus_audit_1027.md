@@ -1,6 +1,6 @@
 # Whole-corpus column audit (2026-10-27)
 
-After the Title repair (`docs/title_repair.md`) and the Rubio re-extraction, every column of the catch-up release candidate was checked against the README's column definitions. Repairs go into the same catch-up release (`scripts/corpus_patch_catchup.py`). All numbers below are on that candidate: v2026.10.26 plus the patch, 17,730 rows.
+After the Title repair (`docs/title_repair.md`) and the Rubio re-extraction, every column of the catch-up release candidate was checked against the README's column definitions. Repairs go into the same catch-up release (`scripts/corpus_patch_catchup.py`). All numbers are on that candidate: v2026.10.26 plus the patch, 17,721 rows.
 
 ## Mechanical rules: all pass
 
@@ -13,7 +13,7 @@ Every row was checked against these rules:
 - Speakers Present includes the row's own Secretary.
 - Canonical URL is either the URL or its renamed path.
 
-## Defects found and repaired
+## Defects found and repaired (first pass, sample-reviewed)
 
 | Defect | Before | After | Repair |
 |---|---:|---:|---|
@@ -34,28 +34,86 @@ Every row was checked against these rules:
 
 A repair is accepted only where it removes text proven to belong to another speaker, or adds text proven to sit next to the existing text on the page. Every repair type was reviewed on samples. Three false positives found in review are now excluded: "the U.S.:", "the OSCE:" and "BEGIN TEXT:" are not speaker labels.
 
+## Distribution audit (second pass)
+
+The first pass reviewed samples of each repair. The second pass checks every row and every column. `scripts/corpus_distribution_audit.py` runs on each release candidate and computes:
+
+- **For each text column, per row:**
+  - distinct words against the corpus-wide length curve (Heaps' law z-score), flagging repetition and word lists;
+  - words no other row uses (garbled or merged words);
+  - the share of upper-case tokens (leftover labels);
+  - SOS words absent from Natural Text, and words absent from the page.
+- **Per-turn coverage:** whether each SOS paragraph occurs on the row's own page and in its own Natural Text.
+- **Across rows:**
+  - 8-word phrases recurring in 25+ rows (boilerplate);
+  - row pairs sharing most of their rare phrases (copied text).
+- **For categorical and list columns:** value frequencies, with every rare or odd-shaped value reviewed.
+
+Defects it found, now repaired:
+
+| Defect | Rows | Repair |
+|---|---:|---|
+| An interviewer's question inside SOS Text: "QUESTION: Secretary Kerry, is there any news on Syria?" had been read as Kerry's own label | about 760 rows, ~100k words | `remove_foreign_paragraphs`, `drop_vocative_remainders`: every SOS paragraph is placed in Natural Text (else Raw Text); the words the page gives another speaker are removed, and the Secretary's merged answer stays |
+| A statement whose opening sentences were lost (the old half-text fallback) | 41 | `restore_statement_start`: from the page's release line, Share widget or dateline to the cut |
+| The Secretary's first word lost after their own label ("SECRETARY POMPEO: Good" + "morning") | 10 | `restore_turn_head` |
+| SOS Text that is another item's speech (7467 "U.S.-Spain Council" carried the Rio+20 speech; 16325 carried the Summit for Democracy speech) | 2 | `sos_from_natural` |
+| Natural Text that does not contain its own SOS Text | 34 | `extend_natural`, now also triggered by coverage |
+| A stray ":" or ")" left by a split label or a broken "(As Delivered" note | 156 | `strip_stray_punctuation` |
+| People Mentioned values that are not people: places ("Sierra Leone", "Goma"), groups ("Boko Haram", "Houthis", "Kosovars"), agreements and concepts ("Quartet", "Roadmap", "Brexit", "Abraham Accords"), greetings and bare titles | 3,084 cells in 1,702 rows | `corpus_enrich_v1.is_not_a_person`: a reviewed list from the value distribution, plus shape rules (opens with a lower-case non-particle word, ends in "of"); real names such as Lloyd Austin or al-Sisi are kept |
+| Rows with none of the Secretary's own words, or out of scope | 9 | Removed (below) |
+
+Bugs in the repairs themselves were found by re-running the audit on its own output and are fixed, with tests:
+- Page label typos ("SECRETARY ABRIGHT", "SECRETARY RUBI") and a bare "SECRETARY :" had made the Secretary's own turns look foreign. Labels now tolerate small misspellings.
+- A guard skips any removal that would strip more than 80% of a row's SOS Text.
+- A comma-led paragraph is removed only where the page puts it inside another speaker's turn. "Secretary Albright, Estonian President Meri, …" opens a genuine joint statement; its subject is restored instead.
+
+**Before → after** (v2026.10.26 → candidate):
+
+| Measure | Before | After |
+|---|---:|---:|
+| SOS Text starting with punctuation | 209 | 11 |
+| Comma-led SOS paragraphs | 788 | 13 |
+| SOS Text starting lower-case | 181 | 53 |
+| Missed stage directions | 93 | 3 |
+| Other speakers' labels in SOS Text | 30 | 0 |
+| Natural Text badly shorter than SOS Text | 44 | 0 |
+| SOS Text mostly not on its own page | 4 | 0 |
+
+The 53 lower-case starts and the 11 punctuation starts are the page's own text. They are transcripts that begin "(In progress)" or "(Inaudible)", or paragraphs whose preceding hyperlinked word was lost at the source. Recurring phrases are diplomatic formulae; none is site chrome.
+
+## Rows removed
+
+All renumber the rows after them (Check Q accepts the audited removals).
+
+| v2026.10.26 Row Id | Why |
+|---|---|
+| 17461, 17463 | Spokesperson media notes about Rubio (out of scope) |
+| 1732 | The page has only a reporter's question |
+| 7477 | A Public Schedule page (site navigation) |
+| 12442 | A third-person travel announcement |
+| 6035 | An official's briefing; its SOS Text was a reporter's question |
+| 35, 73 | Nick Burns's press briefings as spokesman |
+| 6838 | A background briefing by senior administration officials |
+| 10170, 10171 | Spanish and French translations of row 10172 (translations of English items are out of scope) |
+
 ## Decisions (user, 2026-10-27)
 
-- **Row 0** (Warren Christopher's farewell testimony, 1997-01-08) stays. Removing it would shift every Row Id.
-- **Confirmation-hearing statements** given just before taking office stay. There is one per Secretary.
-- **Location** is repaired from page evidence only, with the README newsroom rule for written statements.
+- **Row 0** (Warren Christopher's farewell testimony) stays.
+- **Pre-tenure confirmation statements** stay.
+- **Location** is repaired from page evidence only.
+- **Rows with none of the Secretary's own words** are removed.
+- **Audit method:** exhaustive distributions over every row and column, not spot checks, and every known issue is addressed.
 
-## Left for a decision or not repairable
+## Not changed, by design
 
-- **Rows with none of the Secretary's own words:**
-  - 1732: the page has only a reporter's question.
-  - 7477: Clinton's Public Schedule, all navigation.
-  - 12442: a third-person travel announcement.
-  - 6035: an official's briefing; its SOS Text is a reporter's question.
-
-  Removing them renumbers the later rows.
-- **5187 and 5957** (Clinton special briefings): labels truncated at the source to "ASSISTANT" leave other officials' words in SOS Text.
-- **37 texts start at a word boundary** in mid-sentence, e.g. 47 "act of this magnitude …". The missing words may be another speaker's, so they are not restored automatically.
+- **Transcripts that start "(In progress)" or "(Inaudible)"** are kept: this is the page's own text.
+- **Words lost at the source** (a hyperlinked word before a comma) cannot be recovered.
 - **"Foreign Minister Sid'ahmed"** (859): this name keeps its internal capital, which the apostrophe rule cannot tell apart.
+- **The long tail of People Mentioned** (about 14,000 values used by one row each) remains automatic extraction, as the README states. The frequent errors are removed.
 
 ## Verification
 
-- The strict verifier passes on the candidate: `--strict-titles --rubio-coverage --strict-rubio-coverage --allow-changed-rows <audit>`. Check Q accepts 7,561 audited changes.
-- Compared with v2026.10.26, it adds no warnings.
-- Check R (Natural shorter than SOS) falls from 131 to 87 rows; the rest differ by a word or two of tokenisation.
-- All 231 tests pass.
+Strict verifier on the candidate (`--strict-titles --rubio-coverage --strict-rubio-coverage --allow-changed-rows`):
+- PASSED, with 17,721 rows and 8,457 audited changes.
+- Compared with v2026.10.26, it adds no warnings. Check R falls from 131 to 85, and short People Mentioned tokens from 866 to 833.
+- All 239 tests pass.
