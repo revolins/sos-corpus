@@ -1,0 +1,6 @@
+Row Id,Secretary,Date,Title,Speech Type,Location,URL,SOS Text,Natural Text,Raw Text,SOS Word Count,Natural Word Count,Row Hash,Speakers Present,People Mentioned (Natural Text),People Mentioned (SOS Text),Countries Mentioned,Country ISO Codes Mentioned,Canonical URL
+0,Albright,1999-03-01,Remarks on Kosovo,Remarks,"Washington, D.C.",https://1997-2001.state.gov/x.html,"Thank you.
+We stand with Kosovo.","SECRETARY ALBRIGHT: Thank you.
+We stand with Kosovo.",page,6,8,aa,Albright,,,Kosovo,N/A,https://1997-2001.state.gov/x.html
+1,Rubio,2025-02-03,Interview,Interview,"Panama City, Panama",https://www.state.gov/y,Good to be here.,"QUESTION: Welcome.
+SECRETARY RUBIO: Good to be here.",page,4,6,bb,[QUESTION]; Rubio,Mulino,,Panama,PAN,https://www.state.gov/y
