@@ -150,6 +150,24 @@ _SNAPSHOT_COLUMNS = ['page', 'pos', 'href', 'url_key', 'type', 'title', 'list_da
 _PENDING_COLUMNS = ['url', 'first_seen', 'attempts', 'last_error', 'source']
 
 
+class AccessRefused(RuntimeError):
+    """state.gov refused the request (401/403/405/407): a deliberate block, not an outage.
+
+    Since about 2026-10-26 state.gov's CloudFront firewall refuses automated clients
+    site-wide (the 2026-11-09 weekly run got 405 on the remarks index; robots.txt, the
+    sitemaps and the RSS feed all return 403). Retrying cannot help, and working
+    around it is not an option, so the run stops cleanly with EXIT_ACCESS_REFUSED.
+    """
+
+    def __init__(self, url: str, status: int):
+        super().__init__(f'{status} access refused for url: {url}')
+        self.url, self.status = url, status
+
+
+EXIT_ACCESS_REFUSED = 3
+_REFUSED_STATUSES = frozenset({401, 403, 405, 407})
+
+
 class DiscoveryError(RuntimeError):
     """A discovery source could not be read, so "nothing new" is unprovable."""
 
@@ -191,8 +209,16 @@ def _get_with_retry(session: requests.Session, url: str, *,
     for attempt in range(1, attempts + 1):
         try:
             resp = session.get(url, headers=_HEADERS, timeout=_FETCH_TIMEOUT)
+            # Only a refusal BY state.gov is a block. A page that redirects off
+            # state.gov and is refused there stays an HTTPError, so fetch_rubio_page
+            # still classes it as external_redirect.
+            final = str(getattr(resp, 'url', '') or url)
+            if resp.status_code in _REFUSED_STATUSES and _is_state_gov(final):
+                raise AccessRefused(url, resp.status_code)
             resp.raise_for_status()
             return resp
+        except AccessRefused:
+            raise                     # a block, not a flake: no retry
         except Exception as e:  # noqa: BLE001 -- requests raises a wide family
             last = e
             if attempt < attempts:
@@ -204,11 +230,11 @@ def _get_with_retry(session: requests.Session, url: str, *,
     raise last
 
 
+# Identify the crawler honestly. It used to pose as Firefox; when state.gov
+# started refusing automated clients (2026-11) the right response is to stop and
+# report, not to look more like a browser.
 _HEADERS = {
-    'User-Agent': (
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) '
-        'Gecko/20100101 Firefox/115.0'
-    ),
+    'User-Agent': 'sos-corpus-research/1.0 (+https://github.com/revolins/sos-corpus)',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.5',
 }
@@ -890,6 +916,8 @@ def discover_remarks_urls(session: requests.Session, rate_limit: float,
     print(f'[rubio_backfill] Fetching remarks index: {_REMARKS_INDEX}')
     try:
         p1 = fetch_listing(1)
+    except AccessRefused:
+        raise
     except Exception as e:
         # NOT a warning. This index is the primary discovery path for
         # current-era speeches: the /releases/office-of-the-spokes*/YYYY/MM/
@@ -2371,6 +2399,22 @@ def run(args: argparse.Namespace) -> None:
                 in_corpus=lambda u: _in_corpus(u, index),
                 snapshot=snapshot, skiplog=skiplog, stats=disc, run_id=run_id,
                 extra=extra)
+    except AccessRefused as e:
+        # state.gov refused us outright (see AccessRefused). Same bookkeeping as a
+        # failed crawl -- nothing advanced, nothing lost -- but a distinct exit code
+        # so the workflow can report the block instead of failing as a crash.
+        write_discovery_sidecars()
+        with open(side['summary'], 'w', encoding='utf-8') as f:
+            json.dump({'run_id': run_id, 'date': today, 'access_refused': True,
+                       'refused_url': e.url, 'refused_status': e.status,
+                       'discovery_complete': False}, f, indent=1)
+            f.write('\n')
+        _gh_output(discovery_complete='false', access_refused='true',
+                   refused_status=str(e.status), rows_written=0)
+        print(f'[rubio_backfill] ACCESS REFUSED: {e}\n'
+              f'       state.gov refuses automated clients; stopping without fetching. '
+              f'Pending URLs and the discovery floor are unchanged.', file=sys.stderr)
+        sys.exit(EXIT_ACCESS_REFUSED)
     except DiscoveryError as e:
         # Exit non-zero so the workflow step FAILS and GitHub notifies, rather
         # than the job going green with "No new speeches found". The pending

@@ -43,7 +43,7 @@ print(df.shape)  # e.g. (17701, 19)
 
 ### R package (recommended)
 
-The [`sosspeech`](https://github.com/revolins/sos-corpus/tree/main/r-package) R package loads the corpus into R. `sos_load()` downloads the latest release, which the weekly update keeps current, and caches it. Only the first call for each release downloads; later calls read the cache in seconds. Pass `version = "v2026.10.27"` to load a fixed release for replication.
+The [`sosspeech`](https://github.com/revolins/sos-corpus/tree/main/r-package) R package loads the corpus into R. `sos_load()` downloads the latest release, which the weekly update keeps current, and caches it. Only the first call for each release downloads; later calls read the cache in seconds. Pass `version = "v2026.09.03-enriched"` to load the frozen release used in the paper.
 
 Install the package directly from GitHub:
 
@@ -131,6 +131,18 @@ Every Monday at 06:00 UTC, a GitHub Actions workflow:
 4. Publishes a new versioned release only if the verifier passes all checks
 
 The workflow can also be triggered manually via **Actions → Rubio Corpus Update → Run workflow**.
+
+**If state.gov refuses the crawler.** Since late October 2026, state.gov's firewall refuses automated clients (HTTP 403/405). The crawler identifies itself as `sos-corpus-research/1.0` and does not try to get around a block. When it is refused, the run publishes nothing, keeps its pending queue and discovery floor so nothing is lost, and opens the issue *"Rubio update: state.gov refused automated access"*. The issue closes itself on the first run that gets through. An email-based source for new Rubio statements (State's official GovDelivery releases) is being added for as long as the block lasts.
+
+### Which releases are kept
+
+GitHub keeps only:
+
+- **the latest release**, which the weekly update replaces;
+- **`v2026.09.03-enriched`**, the frozen 17,617-row corpus used in the paper and its replication package. It is never deleted.
+- **the newest `gt-*` ground-truth prerelease.**
+
+Each weekly run deletes a superseded release once it is more than 7 days old (`scripts/prune_releases.py`). Every release is mirrored, with checksums, to an off-GitHub backup before that happens (`scripts/mirror_releases.sh`), and the Hugging Face dataset keeps its full revision history. If you analyse a weekly release, keep your own copy of the CSV and cite its tag and `Row Hash` values.
 
 If a release reached GitHub but the Hugging Face upload failed, run **Actions → Publish to Hugging Face → Run workflow**. It re-publishes an existing release (the latest by default) without scraping.
 
