@@ -147,6 +147,31 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # State's official email releases (GovDelivery) to the project mailbox: the
+      # source for new Rubio statements while state.gov refuses automated clients.
+      # This step only archives the emails (verbatim .eml, read-only on the
+      # mailbox); building rows from them comes once real samples exist. A no-op
+      # until the SOS_IMAP_* secrets are set. The archive and the UID state ride on
+      # the latest release like the other state files.
+      - name: Archive State email releases
+        id: email
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOS_IMAP_HOST: ${{ secrets.SOS_IMAP_HOST }}
+          SOS_IMAP_USER: ${{ secrets.SOS_IMAP_USER }}
+          SOS_IMAP_PASSWORD: ${{ secrets.SOS_IMAP_PASSWORD }}
+        run: |
+          if gh release download --pattern rubio_email_archive.zip --dir data/ --clobber 2>/dev/null; then
+            unzip -q -o data/rubio_email_archive.zip -d data/
+          fi
+          gh release download --pattern rubio_email_state.json --dir data/ --clobber 2>/dev/null || true
+          python scripts/rubio_email_fetch.py --archive-dir data/email_archive \
+            --state data/rubio_email_state.json
+          if [ -d data/email_archive ]; then
+            rm -f data/rubio_email_archive.zip
+            (cd data && zip -q -r rubio_email_archive.zip email_archive)
+          fi
+
       # Coverage harness input (plan step 8): ground_truth.csv from the newest
       # gt-YYYY.MM.DD prerelease cut by rubio-ground-truth.yml. Optional -- until a
       # ground-truth crawl has published one, the item-level checks just skip.
@@ -218,7 +243,18 @@ jobs:
           elif [ "$FULL_RESCAN" = "true" ]; then
             ARGS+=(--full-rescan)
           fi
-          python scripts/rubio_backfill.py "${ARGS[@]}"
+          # Exit 3 = state.gov refused automated access (403/405; it has done so
+          # site-wide since about 2026-10-26). That is a block, not a crash: record
+          # it, publish nothing, keep the state, and report it in an issue below.
+          # Any other non-zero exit still fails the job.
+          rc=0
+          python scripts/rubio_backfill.py "${ARGS[@]}" || rc=$?
+          if [ "$rc" -eq 3 ]; then
+            echo "access_refused=true" >> "$GITHUB_OUTPUT"
+            echo "::warning title=state.gov refused automated access::The crawler was refused (see data/rubio_backfill_summary.json). No pages were fetched; pending URLs and the discovery floor are unchanged. Nothing will be released from the web source until access returns."
+            exit 0
+          fi
+          exit "$rc"
 
       - name: Count new rows
         id: check
@@ -350,6 +386,7 @@ jobs:
             data/rubio_update_unresolved_gpe_audit.csv
             data/rubio_ground_truth.csv
             data/rubio_gt_missing.txt
+            data/email_archive/
             data/coverage_pre/
             data/coverage/
 
@@ -445,7 +482,8 @@ jobs:
             NOTES="${NOTES} Codebook PDF not attached (build failed; see the Build codebook step)."
           fi
           # Run-to-run state rides on the release the next run downloads.
-          for f in rubio_pending.csv rubio_held.csv rubio_discovery_state.json; do
+          for f in rubio_pending.csv rubio_held.csv rubio_discovery_state.json \
+                   rubio_email_state.json rubio_email_archive.zip; do
             [ -f "data/$f" ] && ASSETS+=("data/$f")
           done
           gh release create "$TAG" \
@@ -466,6 +504,22 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
+      # Retention: keep the latest release, the one it superseded, anything younger
+      # than 7 days (the lab server mirrors every release daily), the paper release
+      # (v2026.09.03-enriched) and the newest gt-*. Runs only after this week's
+      # release and Hugging Face publish both succeeded. See scripts/prune_releases.py.
+      - name: Prune old releases
+        if: success() && steps.merge_check.outputs.merged == 'true' && env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/prune_releases.py
+
+      - name: Prune old releases (dry run, print only)
+        if: env.DRY_RUN == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/prune_releases.py --dry-run
+
       # No new release this run: the state still changed (pending attempts,
       # floor, held list), so overwrite it on the latest release. Only on
       # success -- after a failed merge the previous state is the safe one.
@@ -476,7 +530,8 @@ jobs:
         run: |
           LATEST=$(gh release view --json tagName -q .tagName)
           FILES=()
-          for f in rubio_pending.csv rubio_held.csv rubio_discovery_state.json; do
+          for f in rubio_pending.csv rubio_held.csv rubio_discovery_state.json \
+                   rubio_email_state.json rubio_email_archive.zip; do
             [ -f "data/$f" ] && FILES+=("data/$f")
           done
           if [ "${#FILES[@]}" -gt 0 ]; then
@@ -486,7 +541,7 @@ jobs:
 
       # One open issue per problem, updated with a comment each run rather
       # than a new issue per week.
-      - name: Open or update issues (stuck pending / held rows)
+      - name: Open or update issues (stuck pending / held rows / access refused)
         if: always() && env.DRY_RUN != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -507,6 +562,22 @@ jobs:
             { echo "URLs that have failed to fetch in 3 or more weekly runs (data/rubio_pending.csv). Run: $RUN_URL"
               echo; echo '```'; head -c 60000 data/rubio_stuck.csv; echo '```'; } > stuck_body.md
             open_or_update "Rubio update: stuck pending URLs" stuck_body.md
+          fi
+          REFUSED_TITLE="Rubio update: state.gov refused automated access"
+          if [ "${{ steps.scrape.outputs.access_refused }}" = "true" ]; then
+            { echo "state.gov refused the weekly crawler this run, so no pages were fetched. Run: $RUN_URL"
+              echo
+              echo "The crawler identifies itself honestly and does not try to get around the block. Pending URLs and the discovery floor are unchanged, so nothing is lost; the next run that is allowed through picks up where this one stopped."
+              echo
+              echo '```'; cat data/rubio_backfill_summary.json 2>/dev/null; echo '```'; } > refused_body.md
+            open_or_update "$REFUSED_TITLE" refused_body.md
+          elif [ "${{ steps.scrape.outcome }}" = "success" ]; then
+            # Access is back: close the open block issue, if any.
+            num=$(gh issue list --state open --search "\"$REFUSED_TITLE\" in:title" \
+                    --json number,title -q ".[] | select(.title == \"$REFUSED_TITLE\") | .number" | head -n 1)
+            if [ -n "$num" ]; then
+              gh issue close "$num" --comment "state.gov accepted the crawler again in $RUN_URL."
+            fi
           fi
           if [ -f data/rubio_held.flag ] && [ -f data/rubio_held.csv ]; then
             { echo "New Rubio rows held by the per-row verifier gate (not released; retried each run). Run: $RUN_URL"

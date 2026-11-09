@@ -173,4 +173,4 @@ kwic("\\bArctic\\b", n = 6)
 # - `Date` is the publication date; a statement released the evening after an
 #   event may be dated a day later.
 # - New Rubio statements are added every Monday as a new versioned release.
-#   Note which release you used (the file name, e.g. corpus_v2026.10.27.csv).
+#   Note which release you used (the file name, e.g. corpus_v2026.11.02.csv, or attr(x, "release")).

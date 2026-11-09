@@ -708,6 +708,44 @@ def test_run_discovery_error_writes_sidecars_and_keeps_state(tmp_path, monkeypat
     assert not (out / 'rubio_new.csv').exists()
 
 
+@pytest.mark.parametrize('status', [403, 405])
+def test_access_refused_is_not_retried(status):
+    s = FakeSession({IDX: FakeResp(IDX, status, 'Exception: forbidden')})
+    with pytest.raises(rb.AccessRefused) as ei:
+        rb._get_with_retry(s, IDX, label='remarks page 1')
+    assert ei.value.status == status and s.calls == [IDX]        # one request, no retries
+
+
+def test_outage_still_retries():
+    s = FakeSession({IDX: FakeResp(IDX, 504, 'gateway timeout')})
+    with pytest.raises(requests.HTTPError):
+        rb._get_with_retry(s, IDX, label='remarks page 1')
+    assert s.calls == [IDX] * rb._FETCH_ATTEMPTS
+
+
+def test_crawler_identifies_itself_honestly():
+    ua = rb._HEADERS['User-Agent']
+    assert ua.startswith('sos-corpus-research/') and 'Mozilla' not in ua
+
+
+def test_run_access_refused_exits_3_and_keeps_state(tmp_path, monkeypatch):
+    corpus, out, excl, supp = _e2e_setup(tmp_path)
+    (out / 'rubio_discovery_state.json').write_text('{"last_complete_floor": "2026-06-01"}')
+    s = FakeSession({IDX: FakeResp(IDX, 405, 'Not Allowed')})
+    gh = tmp_path / 'gh'
+    with pytest.raises(SystemExit) as ei:
+        _run_main(monkeypatch, s, corpus, out, excl, supp, gh)
+    assert ei.value.code == rb.EXIT_ACCESS_REFUSED
+    assert s.calls == [IDX]                                       # stopped at the first refusal
+    assert json.loads((out / 'rubio_discovery_state.json').read_text()) == {'last_complete_floor': '2026-06-01'}
+    assert _rows(out / 'rubio_pending.csv')[0]['attempts'] == '1'      # untouched
+    assert not (out / 'rubio_new.csv').exists()
+    summ = json.loads((out / 'rubio_backfill_summary.json').read_text())
+    assert summ['access_refused'] is True and summ['refused_status'] == 405
+    kv = dict(line.split('=', 1) for line in gh.read_text().split())
+    assert kv['access_refused'] == 'true' and kv['refused_status'] == '405'
+
+
 def test_run_dry_run_leaves_state_alone(tmp_path, monkeypatch):
     corpus, out, excl, supp = _e2e_setup(tmp_path)
     s = FakeSession(_e2e_routes(tmp_path))
