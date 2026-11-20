@@ -26,8 +26,11 @@ Sidecars (next to --output unless given; data/ in CI; see docs/rubio_coverage_au
 Usage:
     python3 rubio_backfill.py [options]     (see --help)
 
-Exit codes: 0 done (including "nothing new"); non-zero when discovery could not
-prove completeness (DiscoveryError) -- never "no new speeches" on a failed crawl.
+Exit codes: 0 done (including "nothing new"); 3 (EXIT_ACCESS_REFUSED) when state.gov
+refused the crawler -- it stops at the first refusal, keeps every unfetched URL in
+the pending queue and writes whatever rows it already had; any other non-zero code
+when discovery could not prove completeness (DiscoveryError) -- never "no new
+speeches" on a failed crawl.
 """
 import argparse
 import csv
@@ -1275,6 +1278,8 @@ def fetch_rubio_page(url: str, session: requests.Session, *,
     """
     try:
         resp = _get_with_retry(session, url, attempts=attempts, label=url)
+    except AccessRefused:
+        raise                 # a block stops the run (see run()), not one page's failure
     except Exception as e:  # noqa: BLE001 -- requests raises a wide family
         final = _failed_final_url(e)
         kind = 'external_redirect' if final and not _is_state_gov(final) else 'fetch_error'
@@ -2524,6 +2529,7 @@ def run(args: argparse.Namespace) -> None:
         if c.source in _CAPPED_SOURCES and stage in ('classify', 'extract', 'post_fetch'):
             classified[_live_key(c.url)] = {'reason': reason, 'date': today}
 
+    refused: AccessRefused | None = None
     for i, c in enumerate(new_cands, 1):
         url = c.url
         time.sleep(rate_limit)
@@ -2531,6 +2537,21 @@ def run(args: argparse.Namespace) -> None:
 
         try:
             page = fetch_rubio_page(url, session, raise_errors=True)
+        except AccessRefused as e:
+            # Refused part-way through: stop requesting at once. This URL and every
+            # candidate not yet tried go to the pending queue (entries already
+            # pending are kept as they are), so nothing is lost; rows fetched so
+            # far are written as usual, and the run exits EXIT_ACCESS_REFUSED.
+            refused = e
+            print(f'[rubio_backfill] ACCESS REFUSED at {url}: {e} -- stopping; '
+                  f'{len(new_cands) - i + 1} URL(s) left for the pending queue.',
+                  file=sys.stderr)
+            for rest in new_cands[i - 1:]:
+                key = _live_key(rest.url)
+                if rest is c or key not in pending:
+                    failures[key] = (rest.url, f'access_refused: {e.status} (not fetched)')
+                    failure_sources[key] = rest.origin or rest.source
+            break
         except FetchFailure as f:
             failed += 1
             failure_sources[_live_key(url)] = c.origin or c.source
@@ -2691,6 +2712,9 @@ def run(args: argparse.Namespace) -> None:
         'skipped_by_reason': dict(by_reason),
         'pending': len(new_pending), 'stuck': len(stuck),
     }
+    if refused is not None:
+        summary.update(access_refused=True, refused_url=refused.url,
+                       refused_status=refused.status)
     with open(side['summary'], 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=1)
         f.write('\n')
@@ -2722,6 +2746,9 @@ def run(args: argparse.Namespace) -> None:
     print(f'  Modality: {dict(Counter(r["modality"] for r in rows_out))}')
     if dates:
         print(f'  Date range: {min(dates)} – {max(dates)}')
+    if refused is not None:
+        _gh_output(access_refused='true', refused_status=str(refused.status))
+        sys.exit(EXIT_ACCESS_REFUSED)
 
 
 def main() -> None:

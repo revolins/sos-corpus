@@ -226,7 +226,7 @@ jobs:
           python scripts/rubio_backfill.py "${ARGS[@]}" || rc=$?
           if [ "$rc" -eq 3 ]; then
             echo "access_refused=true" >> "$GITHUB_OUTPUT"
-            echo "::warning title=state.gov refused automated access::The crawler was refused (see data/rubio_backfill_summary.json). No pages were fetched; pending URLs and the discovery floor are unchanged. Nothing will be released from the web source until access returns."
+            echo "::warning title=state.gov refused automated access::The crawler was refused and stopped at once (see data/rubio_backfill_summary.json). Every URL it did not fetch is in the pending queue; rows fetched before the refusal, if any, go through the normal merge and checks."
             exit 0
           fi
           exit "$rc"
