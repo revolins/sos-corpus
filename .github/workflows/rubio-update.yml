@@ -147,31 +147,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # State's official email releases (GovDelivery) to the project mailbox: the
-      # source for new Rubio statements while state.gov refuses automated clients.
-      # This step only archives the emails (verbatim .eml, read-only on the
-      # mailbox); building rows from them comes once real samples exist. A no-op
-      # until the SOS_IMAP_* secrets are set. The archive and the UID state ride on
-      # the latest release like the other state files.
-      - name: Archive State email releases
-        id: email
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOS_IMAP_HOST: ${{ secrets.SOS_IMAP_HOST }}
-          SOS_IMAP_USER: ${{ secrets.SOS_IMAP_USER }}
-          SOS_IMAP_PASSWORD: ${{ secrets.SOS_IMAP_PASSWORD }}
-        run: |
-          if gh release download --pattern rubio_email_archive.zip --dir data/ --clobber 2>/dev/null; then
-            unzip -q -o data/rubio_email_archive.zip -d data/
-          fi
-          gh release download --pattern rubio_email_state.json --dir data/ --clobber 2>/dev/null || true
-          python scripts/rubio_email_fetch.py --archive-dir data/email_archive \
-            --state data/rubio_email_state.json
-          if [ -d data/email_archive ]; then
-            rm -f data/rubio_email_archive.zip
-            (cd data && zip -q -r rubio_email_archive.zip email_archive)
-          fi
-
       # Coverage harness input (plan step 8): ground_truth.csv from the newest
       # gt-YYYY.MM.DD prerelease cut by rubio-ground-truth.yml. Optional -- until a
       # ground-truth crawl has published one, the item-level checks just skip.
@@ -386,7 +361,6 @@ jobs:
             data/rubio_update_unresolved_gpe_audit.csv
             data/rubio_ground_truth.csv
             data/rubio_gt_missing.txt
-            data/email_archive/
             data/coverage_pre/
             data/coverage/
 
@@ -482,8 +456,7 @@ jobs:
             NOTES="${NOTES} Codebook PDF not attached (build failed; see the Build codebook step)."
           fi
           # Run-to-run state rides on the release the next run downloads.
-          for f in rubio_pending.csv rubio_held.csv rubio_discovery_state.json \
-                   rubio_email_state.json rubio_email_archive.zip; do
+          for f in rubio_pending.csv rubio_held.csv rubio_discovery_state.json; do
             [ -f "data/$f" ] && ASSETS+=("data/$f")
           done
           gh release create "$TAG" \
@@ -530,8 +503,7 @@ jobs:
         run: |
           LATEST=$(gh release view --json tagName -q .tagName)
           FILES=()
-          for f in rubio_pending.csv rubio_held.csv rubio_discovery_state.json \
-                   rubio_email_state.json rubio_email_archive.zip; do
+          for f in rubio_pending.csv rubio_held.csv rubio_discovery_state.json; do
             [ -f "data/$f" ] && FILES+=("data/$f")
           done
           if [ "${#FILES[@]}" -gt 0 ]; then

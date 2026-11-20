@@ -132,7 +132,7 @@ Every Monday at 06:00 UTC, a GitHub Actions workflow:
 
 The workflow can also be triggered manually via **Actions → Rubio Corpus Update → Run workflow**.
 
-**If state.gov refuses the crawler.** Since late October 2026, state.gov's firewall refuses automated clients (HTTP 403/405). The crawler identifies itself as `sos-corpus-research/1.0` and does not try to get around a block. When it is refused, the run publishes nothing, keeps its pending queue and discovery floor so nothing is lost, and opens the issue *"Rubio update: state.gov refused automated access"*. The issue closes itself on the first run that gets through. An email-based source for new Rubio statements (State's official GovDelivery releases) is being added for as long as the block lasts.
+**If state.gov refuses the crawler.** Since late October 2026, state.gov's firewall refuses automated clients (HTTP 403/405). The crawler identifies itself as `sos-corpus-research/1.0` and does not try to get around a block. When it is refused, the run publishes nothing, keeps its pending queue and discovery floor so nothing is lost, and opens the issue *"Rubio update: state.gov refused automated access"*. The issue closes itself on the first run that gets through.
 
 ### Which releases are kept
 
