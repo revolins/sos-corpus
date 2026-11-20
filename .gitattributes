@@ -1,0 +1,5 @@
+# local_fetch/ (the maintainer's fetch tool and its bundles) is not part of the
+# published dataset or the source archives GitHub builds for releases.
+local_fetch/ export-ignore
+# Bundles are machine-written: collapse them in PR diffs (still viewable).
+local_fetch/bundles/** linguist-generated=true

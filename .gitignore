@@ -13,6 +13,9 @@ data/*
 !data/rubio_unique_translations.csv
 # Small offline test fixtures (CSV ones included) must ship with the repo.
 !tests/fixtures/**/*.csv
+# local_fetch/ bundles are committed (the raw data of a local fetch); its work/
+# directory (corpus cache, venv, run dirs) is covered by work/ below.
+!local_fetch/bundles/**/*.csv
 *.parquet
 *.pkl
 

@@ -7,7 +7,7 @@
 #' newest cached release is used.
 #'
 #' @param years Optional integer vector of years to keep. Default keeps all.
-#' @param version Release tag, e.g. `"v2026.10.27"`, or `"latest"`.
+#' @param version Release tag, e.g. `"v2026.09.03-enriched"` (the paper release), or `"latest"`.
 #' @param path Optional path to a local corpus CSV; when given, nothing is
 #'   downloaded or cached.
 #' @param cache_dir Directory for cached releases. Defaults to
@@ -26,7 +26,7 @@
 #' \dontrun{
 #' x <- sos_load()
 #' x_2010 <- sos_load(years = 2010)
-#' x_fixed <- sos_load(version = "v2026.10.27")   # a fixed release, for replication
+#' x_paper <- sos_load(version = "v2026.09.03-enriched")   # the paper release, for replication
 #' }
 sos_load <- function(years = NULL, version = "latest", path = NULL,
                      cache_dir = NULL, refresh = FALSE) {

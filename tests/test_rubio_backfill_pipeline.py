@@ -708,6 +708,74 @@ def test_run_discovery_error_writes_sidecars_and_keeps_state(tmp_path, monkeypat
     assert not (out / 'rubio_new.csv').exists()
 
 
+@pytest.mark.parametrize('status', [403, 405])
+def test_access_refused_is_not_retried(status):
+    s = FakeSession({IDX: FakeResp(IDX, status, 'Exception: forbidden')})
+    with pytest.raises(rb.AccessRefused) as ei:
+        rb._get_with_retry(s, IDX, label='remarks page 1')
+    assert ei.value.status == status and s.calls == [IDX]        # one request, no retries
+
+
+def test_outage_still_retries():
+    s = FakeSession({IDX: FakeResp(IDX, 504, 'gateway timeout')})
+    with pytest.raises(requests.HTTPError):
+        rb._get_with_retry(s, IDX, label='remarks page 1')
+    assert s.calls == [IDX] * rb._FETCH_ATTEMPTS
+
+
+def test_crawler_identifies_itself_honestly():
+    ua = rb._HEADERS['User-Agent']
+    assert ua.startswith('sos-corpus-research/') and 'Mozilla' not in ua
+
+
+def test_run_access_refused_exits_3_and_keeps_state(tmp_path, monkeypatch):
+    corpus, out, excl, supp = _e2e_setup(tmp_path)
+    (out / 'rubio_discovery_state.json').write_text('{"last_complete_floor": "2026-06-01"}')
+    s = FakeSession({IDX: FakeResp(IDX, 405, 'Not Allowed')})
+    gh = tmp_path / 'gh'
+    with pytest.raises(SystemExit) as ei:
+        _run_main(monkeypatch, s, corpus, out, excl, supp, gh)
+    assert ei.value.code == rb.EXIT_ACCESS_REFUSED
+    assert s.calls == [rb._ROBOTS_URL, IDX]                       # stopped at the first refusal
+    assert json.loads((out / 'rubio_discovery_state.json').read_text()) == {'last_complete_floor': '2026-06-01'}
+    assert _rows(out / 'rubio_pending.csv')[0]['attempts'] == '1'      # untouched
+    assert not (out / 'rubio_new.csv').exists()
+    summ = json.loads((out / 'rubio_backfill_summary.json').read_text())
+    assert summ['access_refused'] is True and summ['refused_status'] == 405
+    kv = dict(line.split('=', 1) for line in gh.read_text().split())
+    assert kv['access_refused'] == 'true' and kv['refused_status'] == '405'
+
+
+def test_run_refused_mid_fetch_stops_and_queues_the_rest(tmp_path, monkeypatch):
+    corpus, out, excl, supp = _e2e_setup(tmp_path)
+    routes = _e2e_routes(tmp_path)
+    refused = f'{SPOKES}/2026/10/media-note-about-him/'
+    routes[refused] = FakeResp(refused, 403, 'Exception: forbidden')
+    s = FakeSession(routes)
+    gh = tmp_path / 'gh'
+    with pytest.raises(SystemExit) as ei:
+        _run_main(monkeypatch, s, corpus, out, excl, supp, gh)
+    assert ei.value.code == rb.EXIT_ACCESS_REFUSED
+    assert s.calls.count(refused) == 1 and s.calls[-1] == refused   # nothing requested after it
+    written = {r['url'] for r in _rows(out / 'rubio_new.csv')}
+    pending = {p['url']: p for p in _rows(out / 'rubio_pending.csv')}
+    assert refused in pending and 'access_refused' in pending[refused]['last_error']
+    item_urls = [u for u in routes if u.startswith(SPOKES) or u.startswith(f'{WWW}/')
+                 if u not in (IDX,) and 'sitemap' not in u]
+    fetched = set(s.calls)
+    for u in item_urls:            # every item page is written, still queued, or classified out
+        if u not in fetched and 'already-have' not in u and 'frostadottir' not in u:
+            assert u in pending, u
+    old = f'{SPOKES}/2026/09/pending-from-last-week/'
+    if old not in fetched:
+        assert pending[old]['attempts'] == '1'                      # untouched, not a new failure
+    summ = json.loads((out / 'rubio_backfill_summary.json').read_text())
+    assert summ['access_refused'] is True and summ['refused_status'] == 403
+    assert summ['written'] == len(written)
+    kv = dict(line.split('=', 1) for line in gh.read_text().split())
+    assert kv['access_refused'] == 'true'
+
+
 def test_run_dry_run_leaves_state_alone(tmp_path, monkeypatch):
     corpus, out, excl, supp = _e2e_setup(tmp_path)
     s = FakeSession(_e2e_routes(tmp_path))
@@ -721,7 +789,7 @@ def test_run_dry_run_leaves_state_alone(tmp_path, monkeypatch):
     assert _rows(out / 'rubio_pending.csv')[0]['attempts'] == '1'
     assert (out / 'rubio_listing_snapshot.csv').exists()
     # nothing but listing/sitemap requests
-    assert all(c == IDX or c.endswith('.xml') for c in s.calls)
+    assert all(c in (IDX, rb._ROBOTS_URL) or c.endswith('.xml') for c in s.calls)
 
 
 def test_sitemap_fetch_cap_logs_what_it_drops(tmp_path, monkeypatch):

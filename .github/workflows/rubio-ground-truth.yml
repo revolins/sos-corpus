@@ -234,3 +234,20 @@ jobs:
               --title "Rubio ground truth ${GT_DATE}" \
               --notes "Read-only state.gov ground-truth crawl (run ${GITHUB_RUN_ID}). Not a corpus release; consumed by the coverage reconciler and verifier check AC."
           fi
+
+      # Retention (same rule as scripts/prune_releases.py): only the newest gt-*
+      # is kept, plus any younger than 7 days so the lab mirror can copy it.
+      - name: Prune older gt-* prereleases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          GT_DATE: ${{ needs.crawl.outputs.date }}
+        run: |
+          NEW="gt-${GT_DATE//-/.}"
+          CUTOFF=$(date -u -d '7 days ago' +%FT%TZ)
+          gh release list --limit 200 --json tagName,createdAt \
+            -q ".[] | select(.tagName | startswith(\"gt-\")) | select(.tagName != \"$NEW\") | select(.createdAt < \"$CUTOFF\") | .tagName" |
+          while read -r tag; do
+            echo "Deleting superseded ground truth $tag"
+            gh release delete "$tag" --cleanup-tag --yes
+          done

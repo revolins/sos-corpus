@@ -1,0 +1,20 @@
+# The local fetch, and CI's replay of it, run in exactly this environment (Python 3.11).
+# Pinned because parsing must be identical on both sides: CI replays the recorded
+# pages and requires byte-identical rows. Versions match what the weekly job
+# installed on 2026-11-16. lxml is deliberately absent: without it the scraper
+# parses with html.parser, as the weekly job does.
+#
+#   python3.11 -m venv local_fetch/work/venv
+#   local_fetch/work/venv/bin/pip install -r local_fetch/requirements.txt
+requests==2.34.2
+urllib3==2.8.0
+charset-normalizer==3.5.2
+beautifulsoup4==4.15.0
+soupsieve==4.1.1
+ftfy==6.3.1
+wcwidth==0.9.4
+tqdm==4.70.1
+python-dateutil==4.0.0
+pandas==3.1.1
+numpy==2.4.6
+pytest==9.1.1

@@ -23,11 +23,23 @@ Sidecars (next to --output unless given; data/ in CI; see docs/rubio_coverage_au
   rubio_discovery_state.json  last_complete_floor + sitemap classifications    (D-04)
   rubio_backfill_summary.json run counters
 
+Politeness: the crawler names itself (sos-corpus-research/1.0 +repo URL), reads
+state.gov's robots.txt first and obeys it (Disallow; Crawl-delay raises --rate-limit),
+does not retry permanent 4xx answers, and stops at the first refusal.
+
+--record DIR / --replay DIR (scripts/http_record.py): record every HTTP exchange, or
+re-run a recorded run offline. local_fetch/ uses them so CI can check that a fetch made
+on a maintainer's computer reproduces byte for byte. --print-ci-args MODE prints the
+weekly job's scrape arguments (ci_args), the one definition both share.
+
 Usage:
     python3 rubio_backfill.py [options]     (see --help)
 
-Exit codes: 0 done (including "nothing new"); non-zero when discovery could not
-prove completeness (DiscoveryError) -- never "no new speeches" on a failed crawl.
+Exit codes: 0 done (including "nothing new"); 3 (EXIT_ACCESS_REFUSED) when state.gov
+refused the crawler -- it stops at the first refusal, keeps every unfetched URL in
+the pending queue and writes whatever rows it already had; any other non-zero code
+when discovery could not prove completeness (DiscoveryError) -- never "no new
+speeches" on a failed crawl.
 """
 import argparse
 import csv
@@ -41,6 +53,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urljoin, urlsplit
+from urllib.robotparser import RobotFileParser
 from xml.etree import ElementTree
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -150,6 +163,39 @@ _SNAPSHOT_COLUMNS = ['page', 'pos', 'href', 'url_key', 'type', 'title', 'list_da
 _PENDING_COLUMNS = ['url', 'first_seen', 'attempts', 'last_error', 'source']
 
 
+class AccessRefused(RuntimeError):
+    """state.gov refused the request (401/403/405/407): a deliberate block, not an outage.
+
+    Since about 2026-10-26 state.gov's CloudFront firewall refuses automated clients
+    site-wide (the 2026-11-09 weekly run got 405 on the remarks index; robots.txt, the
+    sitemaps and the RSS feed all return 403). Retrying cannot help, and working
+    around it is not an option, so the run stops cleanly with EXIT_ACCESS_REFUSED.
+    """
+
+    def __init__(self, url: str, status: int):
+        super().__init__(f'{status} access refused for url: {url}')
+        self.url, self.status = url, status
+
+
+class RobotsDisallowed(AccessRefused):
+    """state.gov's robots.txt disallows this URL for our crawler; it is never requested.
+
+    For a discovery page (the remarks index, a sitemap) this stops the run like any
+    refusal. For an item page only that page is skipped (reason robots_disallowed).
+    """
+
+    def __init__(self, url: str):
+        RuntimeError.__init__(self, f'robots.txt disallows {url}')
+        self.url, self.status = url, 'robots.txt'
+
+
+EXIT_ACCESS_REFUSED = 3
+EXIT_REPLAY_MISMATCH = 5
+_REFUSED_STATUSES = frozenset({401, 403, 405, 407})
+# Other 4xx answers are not transient, so retrying only adds load; 408 and 429 are.
+_RETRYABLE_4XX = frozenset({408, 429})
+
+
 class DiscoveryError(RuntimeError):
     """A discovery source could not be read, so "nothing new" is unprovable."""
 
@@ -186,32 +232,65 @@ class SkipLog:
 def _get_with_retry(session: requests.Session, url: str, *,
                     attempts: int = _FETCH_ATTEMPTS,
                     label: str = '') -> "requests.Response":
-    """GET with bounded retry/backoff. Raises the last exception on failure."""
+    """GET with bounded retry/backoff. Raises the last exception on failure.
+
+    Never requests a URL robots.txt disallows (RobotsDisallowed). Every attempt is
+    counted in REQUEST_TALLY by status, for the run summary.
+    """
+    if _ROBOTS is not None and not _ROBOTS.can_fetch(_ROBOTS_AGENT, url):
+        raise RobotsDisallowed(url)
     last: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
-            resp = session.get(url, headers=_HEADERS, timeout=_FETCH_TIMEOUT)
+            try:
+                resp = session.get(url, headers=_HEADERS, timeout=_FETCH_TIMEOUT)
+            except Exception as e:  # noqa: BLE001 -- counted, then handled below
+                REQUEST_TALLY[f'error:{type(e).__name__}'] += 1
+                raise
+            REQUEST_TALLY[str(resp.status_code)] += 1
+            # Only a refusal BY state.gov is a block. A page that redirects off
+            # state.gov and is refused there stays an HTTPError, so fetch_rubio_page
+            # still classes it as external_redirect.
+            final = str(getattr(resp, 'url', '') or url)
+            if resp.status_code in _REFUSED_STATUSES and _is_state_gov(final):
+                raise AccessRefused(url, resp.status_code)
             resp.raise_for_status()
             return resp
+        except AccessRefused:
+            raise                     # a block, not a flake: no retry
         except Exception as e:  # noqa: BLE001 -- requests raises a wide family
             last = e
+            status = getattr(getattr(e, 'response', None), 'status_code', None)
+            if isinstance(status, int) and 400 <= status < 500 and status not in _RETRYABLE_4XX:
+                break                 # 404, 410, ...: asking again will not change it
             if attempt < attempts:
                 delay = _FETCH_BACKOFF * attempt
                 print(f'[rubio_backfill] retry {attempt}/{attempts - 1} in {delay:.0f}s '
                       f'for {label or url}: {e}', file=sys.stderr)
-                time.sleep(delay)
+                _sleep(delay)
     assert last is not None
     raise last
 
 
+# Identify the crawler honestly. It used to pose as Firefox; when state.gov
+# started refusing automated clients (2026-11) the right response is to stop and
+# report, not to look more like a browser.
 _HEADERS = {
-    'User-Agent': (
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) '
-        'Gecko/20100101 Firefox/115.0'
-    ),
+    'User-Agent': 'sos-corpus-research/1.0 (+https://github.com/revolins/sos-corpus)',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.5',
 }
+
+# robots.txt is read at the start of every run and obeyed (Disallow, Crawl-delay)
+# for this agent token; see load_robots.
+_ROBOTS_URL = 'https://www.state.gov/robots.txt'
+_ROBOTS_AGENT = 'sos-corpus-research'
+_ROBOTS: RobotFileParser | None = None
+REQUEST_TALLY: Counter = Counter()          # status -> requests, this run
+# Indirections so a replayed run (http_record.ReplaySession) repeats the recorded
+# run's sleeps (skipped) and time-budget decisions (recorded clock values) exactly.
+_sleep = time.sleep
+_budget_clock = time.monotonic
 
 # File extensions and path segments that are never speech pages
 _EXCLUDE_EXTS = ('.pdf', '.png', '.jpg', '.jpeg', '.gif', '.zip', '.doc', '.docx')
@@ -623,7 +702,7 @@ def discover_sitemap_urls(session: requests.Session, rate_limit: float,
     stats.update(sitemaps_read=0, sitemaps_failed=[], sitemaps_old=0, sitemaps_budget_skipped=0,
                  sitemap_page_hits=0, sitemap_flat_hits=0, sitemap_release_hits=0)
     candidates: list[Candidate] = []
-    deadline = time.monotonic() + budget_min * 60 if budget_min else None
+    deadline = _budget_clock() + budget_min * 60 if budget_min else None
 
     print(f'[rubio_backfill] Fetching sitemap index: {_SITEMAP_INDEX}')
     try:
@@ -652,13 +731,13 @@ def discover_sitemap_urls(session: requests.Session, rate_limit: float,
           f'modified before {since} skipped)')
 
     for i, (sitemap_url, kind) in enumerate(children, 1):
-        if deadline is not None and time.monotonic() > deadline:
+        if deadline is not None and _budget_clock() > deadline:
             stats['sitemaps_budget_skipped'] = len(children) - i + 1
             print(f'[rubio_backfill] WARNING: sitemap budget ({budget_min:g} min) spent -- '
                   f'skipping the remaining {len(children) - i + 1} sitemap(s)',
                   file=sys.stderr)
             break
-        time.sleep(rate_limit)
+        _sleep(rate_limit)
         try:
             resp = _get_with_retry(session, sitemap_url, attempts=attempts, label=sitemap_url)
             root = ElementTree.fromstring(resp.text)
@@ -890,6 +969,8 @@ def discover_remarks_urls(session: requests.Session, rate_limit: float,
     print(f'[rubio_backfill] Fetching remarks index: {_REMARKS_INDEX}')
     try:
         p1 = fetch_listing(1)
+    except AccessRefused:
+        raise
     except Exception as e:
         # NOT a warning. This index is the primary discovery path for
         # current-era speeches: the /releases/office-of-the-spokes*/YYYY/MM/
@@ -933,7 +1014,7 @@ def discover_remarks_urls(session: requests.Session, rate_limit: float,
     failed_pages: list[int] = []
     in_window_failed: list[int] = []
     for pg in range(2, max_page + 1):
-        time.sleep(rate_limit)
+        _sleep(rate_limit)
         try:
             parsed = fetch_listing(pg)
         except Exception as e:
@@ -972,7 +1053,7 @@ def discover_remarks_urls(session: requests.Session, rate_limit: float,
 
     # Second chance for unreadable pages, through the CDN with a cache-buster.
     for pg in list(failed_pages):
-        time.sleep(rate_limit)
+        _sleep(rate_limit)
         try:
             parsed = fetch_listing(pg, cache_bust=True)
         except Exception as e:  # noqa: BLE001
@@ -1003,7 +1084,7 @@ def discover_remarks_urls(session: requests.Session, rate_limit: float,
               f'page(s) -- re-walking pages {sorted(affected)} with a cache-buster (D-03)',
               file=sys.stderr)
         for pg in sorted(affected):
-            time.sleep(rate_limit)
+            _sleep(rate_limit)
             try:
                 parsed = fetch_listing(pg, cache_bust=True)
             except Exception as e:  # noqa: BLE001
@@ -1247,6 +1328,8 @@ def fetch_rubio_page(url: str, session: requests.Session, *,
     """
     try:
         resp = _get_with_retry(session, url, attempts=attempts, label=url)
+    except AccessRefused:
+        raise                 # a block stops the run (see run()), not one page's failure
     except Exception as e:  # noqa: BLE001 -- requests raises a wide family
         final = _failed_final_url(e)
         kind = 'external_redirect' if final and not _is_state_gov(final) else 'fetch_error'
@@ -2253,6 +2336,57 @@ def _write_rows(path: Path, columns: list[str], rows) -> None:
         w.writerows(rows)
 
 
+def load_robots(session) -> RobotFileParser:
+    """Read state.gov's robots.txt (RFC 9309) with the crawler's own User-Agent.
+
+    A refusal (401/403/405/407) stops the run like any refusal. Any other 4xx means
+    there are no rules (RFC 9309 2.3.1.3). A 5xx or network failure after retries
+    means the rules are unknown, so nothing is crawled this run (DiscoveryError).
+    """
+    rp = RobotFileParser(_ROBOTS_URL)
+    try:
+        resp = _get_with_retry(session, _ROBOTS_URL, label='robots.txt')
+    except AccessRefused:
+        raise
+    except Exception as e:  # noqa: BLE001
+        status = getattr(getattr(e, 'response', None), 'status_code', None)
+        if isinstance(status, int) and 400 <= status < 500:
+            rp.parse([])
+            return rp
+        raise DiscoveryError(f'robots.txt {_ROBOTS_URL} unreadable: {e}') from e
+    rp.parse(resp.text.splitlines())
+    return rp
+
+
+CI_MODES = ('incremental', 'supplemental', 'full_rescan')
+
+
+def ci_args(data_dir: str | Path = 'data', mode: str = 'incremental') -> list[str]:
+    """The scrape step's arguments: the ONE definition, used by the weekly workflow
+    (--print-ci-args) and by local_fetch/local_fetch.py, so the two cannot drift.
+
+    Optional inputs (held rows, ground-truth gaps) are added only when present,
+    exactly as the workflow did in YAML.
+    """
+    if mode not in CI_MODES:
+        raise ValueError(f'mode must be one of {CI_MODES}, not {mode!r}')
+    d = Path(data_dir)
+    out = ['--enriched', str(d / 'corpus.csv'),
+           '--output', str(d / 'rubio_new.csv'),
+           '--pending', str(d / _PENDING_NAME),
+           '--discovery-state', str(d / _STATE_NAME),
+           '--exclusions', str(d / 'rubio_coverage_exclusions.csv'),
+           '--urls', str(d / 'rubio_supplemental_urls.txt')]
+    for opt in ('rubio_held.csv', 'rubio_gt_missing.txt'):
+        if (d / opt).exists():
+            out += ['--urls', str(d / opt)]
+    if mode == 'supplemental':
+        out.append('--supplemental-only')
+    elif mode == 'full_rescan':
+        out.append('--full-rescan')
+    return out
+
+
 def _run_id() -> str:
     rid = os.environ.get('GITHUB_RUN_ID', '').strip()
     if rid:
@@ -2300,7 +2434,60 @@ def _sidecar_paths(args: argparse.Namespace, out_dir: Path) -> dict[str, Path | 
     }
 
 
+_HTTP_RUN: dict = {}      # the run's session + identity, for _finish_http (record/replay)
+
+
+def _open_session(args: argparse.Namespace, run_id: str, today: str):
+    """A plain requests.Session, or a recording / replaying one (http_record.py)."""
+    global _sleep, _budget_clock
+    replay_dir, record_dir = getattr(args, 'replay', None), getattr(args, 'record', None)
+    if replay_dir:
+        from http_record import ReplaySession
+        session = ReplaySession(Path(replay_dir))
+        _sleep = lambda _s: None              # noqa: E731 -- nothing to wait for offline
+        _budget_clock = session.clock
+    elif record_dir:
+        from http_record import RecordingSession
+        session = RecordingSession(Path(record_dir), requests.Session())
+        _budget_clock = session.clock
+    else:
+        session = requests.Session()
+    _HTTP_RUN.update(session=session, run_id=run_id, today=today,
+                     started=datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                     record_dir=record_dir, replay_dir=replay_dir)
+    return session
+
+
+def _finish_http(ok: bool) -> None:
+    """Close a recording (writing meta.json), or check a replay used all of it."""
+    run = dict(_HTTP_RUN)
+    _HTTP_RUN.clear()
+    session = run.get('session')
+    if run.get('record_dir') and session is not None:
+        session.close()
+        meta = {'run_id': run['run_id'], 'today': run['today'],
+                'user_agent': _HEADERS['User-Agent'], 'robots_agent': _ROBOTS_AGENT,
+                'started': run['started'],
+                'finished': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                'requests_total': session.seq,
+                'requests_by_status': dict(sorted(REQUEST_TALLY.items())),
+                'completed': ok}
+        with open(Path(run['record_dir']) / 'meta.json', 'w', encoding='utf-8') as f:
+            json.dump(meta, f, indent=1, sort_keys=True)
+            f.write('\n')
+    if run.get('replay_dir') and session is not None and ok:
+        left, clock_left = session.unconsumed(), len(session.clock_reads)
+        if left or clock_left:
+            print(f'[rubio_backfill] REPLAY MISMATCH: {len(left)} recorded request(s) never '
+                  f'asked for (e.g. {left[:3]}), {clock_left} clock read(s) unused -- the '
+                  f'replayed run did not follow the recorded one.', file=sys.stderr)
+            raise SystemExit(EXIT_REPLAY_MISMATCH)
+
+
 def run(args: argparse.Namespace) -> None:
+    global _ROBOTS, _sleep, _budget_clock
+    _ROBOTS, _sleep, _budget_clock = None, time.sleep, time.monotonic
+    REQUEST_TALLY.clear()
     enriched_path = Path(args.enriched)
     output_path = Path(args.output)
     side = _sidecar_paths(args, output_path.parent)
@@ -2318,8 +2505,13 @@ def run(args: argparse.Namespace) -> None:
     rate_limit = float(args.rate_limit)
     dry_run = args.dry_run
     supplemental_only = bool(getattr(args, 'supplemental_only', False))
-    run_id = _run_id()
-    today = datetime.now(timezone.utc).date().isoformat()
+    # A replay re-runs a recorded run as that run: same id (it is in cache-buster
+    # URLs and sidecars) and same date (pending first_seen, classification dates).
+    meta = {}
+    if getattr(args, 'replay', None):
+        meta = json.loads((Path(args.replay) / 'meta.json').read_text(encoding='utf-8'))
+    run_id = meta.get('run_id') or _run_id()
+    today = meta.get('today') or datetime.now(timezone.utc).date().isoformat()
     skiplog = SkipLog(run_id)
     snapshot: list[dict] = []
     disc: dict = {}
@@ -2346,7 +2538,7 @@ def run(args: argparse.Namespace) -> None:
           f'last_complete_floor={state.get("last_complete_floor")}')
 
     # Step 2: Discover candidates
-    session = requests.Session()
+    session = _open_session(args, run_id, today)
     mode = ('supplemental only' if supplemental_only else
             'full re-scan' if getattr(args, 'full_rescan', False) else 'incremental')
     print(f'[rubio_backfill] Discovery floor: {since} ({mode})')
@@ -2361,6 +2553,12 @@ def run(args: argparse.Namespace) -> None:
     extra += [Candidate(r['url'], 'pending', origin=r.get('source') or '')
               for r in pending.values()]
     try:
+        _ROBOTS = load_robots(session)
+        delay = _ROBOTS.crawl_delay(_ROBOTS_AGENT)
+        if delay and float(delay) > rate_limit:
+            print(f'[rubio_backfill] robots.txt Crawl-delay {delay}s > --rate-limit '
+                  f'{rate_limit:g}s: using {delay}s')
+            rate_limit = float(delay)
         if supplemental_only:
             all_candidates = _dedup_candidates(extra)
         else:
@@ -2371,6 +2569,23 @@ def run(args: argparse.Namespace) -> None:
                 in_corpus=lambda u: _in_corpus(u, index),
                 snapshot=snapshot, skiplog=skiplog, stats=disc, run_id=run_id,
                 extra=extra)
+    except AccessRefused as e:
+        # state.gov refused us outright (see AccessRefused). Same bookkeeping as a
+        # failed crawl -- nothing advanced, nothing lost -- but a distinct exit code
+        # so the workflow can report the block instead of failing as a crash.
+        write_discovery_sidecars()
+        with open(side['summary'], 'w', encoding='utf-8') as f:
+            json.dump({'run_id': run_id, 'date': today, 'access_refused': True,
+                       'refused_url': e.url, 'refused_status': e.status,
+                       'discovery_complete': False,
+                       'requests': dict(sorted(REQUEST_TALLY.items()))}, f, indent=1)
+            f.write('\n')
+        _gh_output(discovery_complete='false', access_refused='true',
+                   refused_status=str(e.status), rows_written=0)
+        print(f'[rubio_backfill] ACCESS REFUSED: {e}\n'
+              f'       state.gov refuses automated clients; stopping without fetching. '
+              f'Pending URLs and the discovery floor are unchanged.', file=sys.stderr)
+        sys.exit(EXIT_ACCESS_REFUSED)
     except DiscoveryError as e:
         # Exit non-zero so the workflow step FAILS and GitHub notifies, rather
         # than the job going green with "No new speeches found". The pending
@@ -2480,13 +2695,34 @@ def run(args: argparse.Namespace) -> None:
         if c.source in _CAPPED_SOURCES and stage in ('classify', 'extract', 'post_fetch'):
             classified[_live_key(c.url)] = {'reason': reason, 'date': today}
 
+    refused: AccessRefused | None = None
     for i, c in enumerate(new_cands, 1):
         url = c.url
-        time.sleep(rate_limit)
+        _sleep(rate_limit)
         print(f'  [{i}/{len(new_cands)}] [{c.source}] {url}')
 
         try:
             page = fetch_rubio_page(url, session, raise_errors=True)
+        except RobotsDisallowed:
+            # Not requested. Dropped from the pending queue: robots.txt decides.
+            skip(c, 'robots_disallowed', 'prefetch')
+            resolved.add(_live_key(url))
+            continue
+        except AccessRefused as e:
+            # Refused part-way through: stop requesting at once. This URL and every
+            # candidate not yet tried go to the pending queue (entries already
+            # pending are kept as they are), so nothing is lost; rows fetched so
+            # far are written as usual, and the run exits EXIT_ACCESS_REFUSED.
+            refused = e
+            print(f'[rubio_backfill] ACCESS REFUSED at {url}: {e} -- stopping; '
+                  f'{len(new_cands) - i + 1} URL(s) left for the pending queue.',
+                  file=sys.stderr)
+            for rest in new_cands[i - 1:]:
+                key = _live_key(rest.url)
+                if rest is c or key not in pending:
+                    failures[key] = (rest.url, f'access_refused: {e.status} (not fetched)')
+                    failure_sources[key] = rest.origin or rest.source
+            break
         except FetchFailure as f:
             failed += 1
             failure_sources[_live_key(url)] = c.origin or c.source
@@ -2646,7 +2882,11 @@ def run(args: argparse.Namespace) -> None:
         'fetched': len(fetched_ok), 'failed': failed, 'written': len(rows_out),
         'skipped_by_reason': dict(by_reason),
         'pending': len(new_pending), 'stuck': len(stuck),
+        'requests': dict(sorted(REQUEST_TALLY.items())),
     }
+    if refused is not None:
+        summary.update(access_refused=True, refused_url=refused.url,
+                       refused_status=refused.status)
     with open(side['summary'], 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=1)
         f.write('\n')
@@ -2678,6 +2918,9 @@ def run(args: argparse.Namespace) -> None:
     print(f'  Modality: {dict(Counter(r["modality"] for r in rows_out))}')
     if dates:
         print(f'  Date range: {min(dates)} – {max(dates)}')
+    if refused is not None:
+        _gh_output(access_refused='true', refused_status=str(refused.status))
+        sys.exit(EXIT_ACCESS_REFUSED)
 
 
 def main() -> None:
@@ -2742,10 +2985,27 @@ def main() -> None:
                              f'when non-empty). Default: <output dir>/{_STUCK_NAME}')
     parser.add_argument('--summary-out', default=None, metavar='JSON',
                         help=f'Run counters. Default: <output dir>/{_SUMMARY_NAME}')
+    http = parser.add_mutually_exclusive_group()
+    http.add_argument('--record', default=None, metavar='DIR',
+                      help='Record every HTTP exchange (and time-budget clock read) in DIR '
+                           '(local_fetch/; see scripts/http_record.py).')
+    http.add_argument('--replay', default=None, metavar='DIR',
+                      help='Re-run a recorded run offline from DIR: no network, same run id '
+                           'and date. Exits %d if the replay does not follow the recording.'
+                           % EXIT_REPLAY_MISMATCH)
+    parser.add_argument('--print-ci-args', default=None, choices=CI_MODES, metavar='MODE',
+                        help='Print the weekly scrape step\'s arguments for MODE (%s), one '
+                             'per line, and exit.' % ', '.join(CI_MODES))
+    parser.add_argument('--data-dir', default='data',
+                        help='Data directory for --print-ci-args (default: %(default)s)')
     parser.add_argument('--print-since', action='store_true',
                         help='Print the resolved discovery floor and exit. Used by CI to '
                              'compute the cutoff without duplicating the logic in YAML.')
     args = parser.parse_args()
+
+    if args.print_ci_args:
+        print('\n'.join(ci_args(args.data_dir, args.print_ci_args)))
+        return
 
     if args.print_since:
         index = load_existing_urls(Path(args.enriched))
@@ -2755,7 +3015,15 @@ def main() -> None:
         _gh_output(since=since.isoformat())
         return
 
-    run(args)
+    try:
+        run(args)
+    except SystemExit as e:
+        _finish_http(ok=e.code in (None, 0, EXIT_ACCESS_REFUSED))
+        raise
+    except BaseException:
+        _finish_http(ok=False)
+        raise
+    _finish_http(ok=True)
 
 
 if __name__ == '__main__':

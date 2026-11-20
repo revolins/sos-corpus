@@ -15,9 +15,9 @@ remotes::install_github("revolins/sos-corpus", subdir = "r-package")
 library(sosspeech)
 x <- sos_load()                            # latest release, all years
 x <- sos_load(years = 2010)                # one or more years
-x <- sos_load(version = "v2026.10.27")     # a fixed release, for replication
+x <- sos_load(version = "v2026.09.03-enriched")   # the frozen release used in the paper
 attr(x, "release")                         # which release you loaded
-x <- sos_load(path = "corpus_v2026.10.27.csv")   # a CSV you already have
+x <- sos_load(path = "corpus_v2026.11.02.csv")   # a CSV you already have
 ```
 
 Without a network connection, `sos_load()` uses the newest release in its cache. `readr`, if installed, makes the first load faster.

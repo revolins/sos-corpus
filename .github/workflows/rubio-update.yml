@@ -21,6 +21,15 @@ on:
         description: 'Dry run: scrape and merge, but no release, no Hugging Face, no state upload, no issues; outputs go to a workflow artifact'
         type: boolean
         default: false
+  # A fetch run on a maintainer's computer (local_fetch/local_fetch.py) arrives as a
+  # PR adding local_fetch/bundles/<date>/. On the PR the bundle is verified (replay)
+  # and dry-run merged; once the PR is merged to main it is verified again and
+  # released. No request goes to state.gov from CI in either case.
+  pull_request:
+    paths: ['local_fetch/bundles/**']
+  push:
+    branches: [main]
+    paths: ['local_fetch/bundles/**']
 
 # Concurrency is set on the `update` job below, shared with
 # rubio-ground-truth.yml, so two crawls never hit state.gov at once.
@@ -31,6 +40,8 @@ jobs:
     outputs:
       run: ${{ steps.mode.outputs.run }}
       full_rescan: ${{ steps.mode.outputs.full_rescan }}
+      local_bundle: ${{ steps.mode.outputs.local_bundle }}
+      dry_run: ${{ steps.mode.outputs.dry_run }}
     steps:
       - name: Decide run mode
         id: mode
@@ -38,14 +49,25 @@ jobs:
           EVENT: ${{ github.event_name }}
           SCHED: ${{ github.event.schedule }}
           FULL_INPUT: ${{ github.event.inputs.full_rescan }}
+          DRY_INPUT: ${{ github.event.inputs.dry_run }}
         run: |
           RUN=true
           FULL=${FULL_INPUT:-false}
+          DRY=${DRY_INPUT:-false}
+          LOCAL=false
           # Scheduled runs are always incremental; a full rescan is manual only.
           if [ "$EVENT" = "schedule" ]; then FULL=false; fi
+          # A local-fetch bundle: imported instead of crawling. On its PR it is a
+          # dry run (verify + merge + verifier, nothing published).
+          if [ "$EVENT" = "pull_request" ] || [ "$EVENT" = "push" ]; then
+            LOCAL=true; FULL=false
+          fi
+          if [ "$EVENT" = "pull_request" ]; then DRY=true; fi
           echo "run=$RUN" >> "$GITHUB_OUTPUT"
           echo "full_rescan=$FULL" >> "$GITHUB_OUTPUT"
-          echo "event=$EVENT schedule='$SCHED' -> run=$RUN full_rescan=$FULL"
+          echo "local_bundle=$LOCAL" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$DRY" >> "$GITHUB_OUTPUT"
+          echo "event=$EVENT schedule='$SCHED' -> run=$RUN full_rescan=$FULL local_bundle=$LOCAL dry_run=$DRY"
 
   update:
     needs: plan
@@ -55,8 +77,10 @@ jobs:
     # once. cancel-in-progress: false never cancels the RUNNING crawl, but
     # GitHub keeps only ONE pending run per group: a newer queued run replaces
     # (cancels) an older pending one. A skipped job never joins the group.
+    # A PR's dry run touches neither state.gov nor the releases, so it gets its own
+    # group instead of displacing a queued weekly run.
     concurrency:
-      group: state-gov-crawl
+      group: ${{ github.event_name == 'pull_request' && format('local-fetch-pr-{0}', github.event.number) || 'state-gov-crawl' }}
       cancel-in-progress: false
     # A healthy run takes ~5 min. state.gov outages have stretched discovery
     # to 26 min (2026-10-12), and a manual full rescan walks ~80 listing
@@ -69,11 +93,15 @@ jobs:
     env:
       FULL_RESCAN: ${{ needs.plan.outputs.full_rescan }}
       SUPPLEMENTAL: ${{ github.event.inputs.supplemental || 'false' }}
-      DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+      DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+      LOCAL_BUNDLE: ${{ needs.plan.outputs.local_bundle }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Full history so a local-fetch bundle's commit can be checked against main.
+          fetch-depth: ${{ needs.plan.outputs.local_bundle == 'true' && 0 || 1 }}
 
       # Both seed files are checked in (.gitignore re-includes them under data/*).
       # Fail here, not after a green run that silently fetched nothing extra.
@@ -200,25 +228,45 @@ jobs:
       # deduplicated before any fetch.
       - name: Discover and fetch new Rubio speeches
         id: scrape
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ARGS=(--enriched data/corpus.csv
-                --output   data/rubio_new.csv
-                --pending  data/rubio_pending.csv
-                --discovery-state data/rubio_discovery_state.json
-                --exclusions data/rubio_coverage_exclusions.csv
-                --urls     data/rubio_supplemental_urls.txt)
-          if [ -f data/rubio_held.csv ]; then
-            ARGS+=(--urls data/rubio_held.csv)
+          # A local-fetch bundle replaces the crawl: verify it (base release, commit,
+          # arguments, and an offline replay that must reproduce every output byte
+          # for byte), then copy its outputs into data/ as if this step had scraped.
+          # Rejected (stale or not reproducible) -> the job fails.
+          # The replay runs in the pinned environment the fetch ran in
+          # (local_fetch/requirements.txt), so pages parse identically.
+          if [ "$LOCAL_BUNDLE" = "true" ]; then
+            python -m venv "$RUNNER_TEMP/replay"
+            "$RUNNER_TEMP/replay/bin/pip" install -q -r local_fetch/requirements.txt
+            "$RUNNER_TEMP/replay/bin/python" local_fetch/bundle.py import --data data
+            exit $?
           fi
-          if [ -f data/rubio_gt_missing.txt ]; then
-            ARGS+=(--urls data/rubio_gt_missing.txt)
-          fi
+          # The argument list lives in rubio_backfill.ci_args(), shared with
+          # local_fetch/local_fetch.py so a local fetch runs exactly this command.
+          MODE=incremental
           if [ "$SUPPLEMENTAL" = "true" ]; then
-            ARGS+=(--supplemental-only)
+            MODE=supplemental
           elif [ "$FULL_RESCAN" = "true" ]; then
-            ARGS+=(--full-rescan)
+            MODE=full_rescan
           fi
-          python scripts/rubio_backfill.py "${ARGS[@]}"
+          mapfile -t ARGS < <(python scripts/rubio_backfill.py --print-ci-args "$MODE" --data-dir data)
+          if [ "${#ARGS[@]}" -eq 0 ]; then
+            echo "::error::rubio_backfill.py --print-ci-args printed nothing"; exit 1
+          fi
+          # Exit 3 = state.gov refused automated access (403/405; it has done so
+          # site-wide since about 2026-10-26). That is a block, not a crash: record
+          # it, publish nothing, keep the state, and report it in an issue below.
+          # Any other non-zero exit still fails the job.
+          rc=0
+          python scripts/rubio_backfill.py "${ARGS[@]}" || rc=$?
+          if [ "$rc" -eq 3 ]; then
+            echo "access_refused=true" >> "$GITHUB_OUTPUT"
+            echo "::warning title=state.gov refused automated access::The crawler was refused and stopped at once (see data/rubio_backfill_summary.json). Every URL it did not fetch is in the pending queue; rows fetched before the refusal, if any, go through the normal merge and checks."
+            exit 0
+          fi
+          exit "$rc"
 
       - name: Count new rows
         id: check
@@ -285,6 +333,34 @@ jobs:
       # REPORT-ONLY until plan step 10 enforces AC-AI: continue-on-error, and the
       # reconciler runs --legacy-warn-only because v2026.10.19's rows predate the
       # extraction fix. Results ride in the rubio-update-audit artifact.
+      # What a local-fetch bundle contributes, on the PR and on import.
+      - name: Summarize local fetch bundle
+        if: always() && env.LOCAL_BUNDLE == 'true'
+        env:
+          BUNDLE: ${{ steps.scrape.outputs.local_bundle }}
+          MERGED: ${{ steps.merge_check.outputs.merged }}
+          ACTUAL_NEW: ${{ steps.merge_check.outputs.actual_new }}
+          HELD: ${{ steps.merge.outputs.held }}
+        run: |
+          python - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import csv, os
+          csv.field_size_limit(10 ** 9)
+          e = os.environ.get
+          print(f"## Local fetch bundle {e('BUNDLE') or '(rejected: see the scrape step)'}\n")
+          print(f"- Merged into the candidate corpus: {e('MERGED') or 'n/a'}; "
+                f"new rows after merge: {e('ACTUAL_NEW') or 0}; held by the verifier gate: {e('HELD') or 0}")
+          print(f"- {'Dry run (PR): nothing is published.' if e('DRY_RUN') == 'true' else 'Release run.'}\n")
+          try:
+              with open('data/rubio_new.csv', newline='', encoding='utf-8') as f:
+                  rows = list(csv.DictReader(f))
+          except FileNotFoundError:
+              rows = []
+          if rows:
+              print('| Date | Title | URL |\n|---|---|---|')
+              for r in rows:
+                  print(f"| {r.get('Date', '')} | {(r.get('Title') or '').replace('|', '/')[:100]} | {r.get('url', '')} |")
+          EOF
+
       - name: Coverage report (reconciler + verifier AC-AI)
         if: steps.scrape.outcome == 'success'
         continue-on-error: true
@@ -406,6 +482,7 @@ jobs:
           HELD: ${{ steps.merge.outputs.held }}
           PENDING: ${{ steps.scrape.outputs.pending }}
           SKIPPED: ${{ steps.scrape.outputs.skipped }}
+          LOCAL_NOTE: ${{ steps.scrape.outputs.local_note }}
         run: |
           # Count only rows actually merged with a provisional Location: the
           # provenance sidecar lists merged rows only (held ones are not in it).
@@ -414,6 +491,7 @@ jobs:
             PROVISIONAL=$(python -c "import csv,sys; print(sum(r.get('Location Provisional') == '1' for r in csv.DictReader(open(sys.argv[1], newline='', encoding='utf-8'))))" data/rubio_merge_provenance.csv)
           fi
           NOTES="Automated weekly update: ${NEW} new Rubio speeches added and verified."
+          if [ -n "$LOCAL_NOTE" ]; then NOTES="${NOTES} ${LOCAL_NOTE}"; fi
           if [ "$PROVISIONAL" -gt 0 ]; then
             NOTES="${NOTES} ${PROVISIONAL} row(s) merged with a provisional Location (Location Provisional = 1 in rubio_merge_provenance.csv, rubio-update-audit artifact)."
           fi
@@ -466,6 +544,22 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
+      # Retention: keep the latest release, the one it superseded, anything younger
+      # than 7 days (the lab server mirrors every release daily), the paper release
+      # (v2026.09.03-enriched) and the newest gt-*. Runs only after this week's
+      # release and Hugging Face publish both succeeded. See scripts/prune_releases.py.
+      - name: Prune old releases
+        if: success() && steps.merge_check.outputs.merged == 'true' && env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/prune_releases.py
+
+      - name: Prune old releases (dry run, print only)
+        if: env.DRY_RUN == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/prune_releases.py --dry-run
+
       # No new release this run: the state still changed (pending attempts,
       # floor, held list), so overwrite it on the latest release. Only on
       # success -- after a failed merge the previous state is the safe one.
@@ -486,7 +580,7 @@ jobs:
 
       # One open issue per problem, updated with a comment each run rather
       # than a new issue per week.
-      - name: Open or update issues (stuck pending / held rows)
+      - name: Open or update issues (stuck pending / held rows / access refused)
         if: always() && env.DRY_RUN != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -507,6 +601,25 @@ jobs:
             { echo "URLs that have failed to fetch in 3 or more weekly runs (data/rubio_pending.csv). Run: $RUN_URL"
               echo; echo '```'; head -c 60000 data/rubio_stuck.csv; echo '```'; } > stuck_body.md
             open_or_update "Rubio update: stuck pending URLs" stuck_body.md
+          fi
+          REFUSED_TITLE="Rubio update: state.gov refused automated access"
+          if [ "${{ steps.scrape.outputs.access_refused }}" = "true" ]; then
+            { echo "state.gov refused the weekly crawler this run, so no pages were fetched. Run: $RUN_URL"
+              echo
+              echo "The crawler identifies itself honestly and does not try to get around the block. Pending URLs and the discovery floor are unchanged, so nothing is lost; the next run that is allowed through picks up where this one stopped."
+              echo
+              echo "To keep the corpus current meanwhile, a maintainer can run the same fetch from their own computer: \`python local_fetch/local_fetch.py\` (see local_fetch/README.md). It opens a PR that CI verifies and, once merged, releases."
+              echo
+              echo '```'; cat data/rubio_backfill_summary.json 2>/dev/null; echo '```'; } > refused_body.md
+            open_or_update "$REFUSED_TITLE" refused_body.md
+          elif [ "${{ steps.scrape.outcome }}" = "success" ] && [ "$LOCAL_BUNDLE" != "true" ]; then
+            # Access is back for the CI crawler: close the open block issue, if any.
+            # (Not on a local-fetch import: CI itself did not get through.)
+            num=$(gh issue list --state open --search "\"$REFUSED_TITLE\" in:title" \
+                    --json number,title -q ".[] | select(.title == \"$REFUSED_TITLE\") | .number" | head -n 1)
+            if [ -n "$num" ]; then
+              gh issue close "$num" --comment "state.gov accepted the crawler again in $RUN_URL."
+            fi
           fi
           if [ -f data/rubio_held.flag ] && [ -f data/rubio_held.csv ]; then
             { echo "New Rubio rows held by the per-row verifier gate (not released; retried each run). Run: $RUN_URL"
