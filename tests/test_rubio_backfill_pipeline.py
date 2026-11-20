@@ -736,7 +736,7 @@ def test_run_access_refused_exits_3_and_keeps_state(tmp_path, monkeypatch):
     with pytest.raises(SystemExit) as ei:
         _run_main(monkeypatch, s, corpus, out, excl, supp, gh)
     assert ei.value.code == rb.EXIT_ACCESS_REFUSED
-    assert s.calls == [IDX]                                       # stopped at the first refusal
+    assert s.calls == [rb._ROBOTS_URL, IDX]                       # stopped at the first refusal
     assert json.loads((out / 'rubio_discovery_state.json').read_text()) == {'last_complete_floor': '2026-06-01'}
     assert _rows(out / 'rubio_pending.csv')[0]['attempts'] == '1'      # untouched
     assert not (out / 'rubio_new.csv').exists()
@@ -789,7 +789,7 @@ def test_run_dry_run_leaves_state_alone(tmp_path, monkeypatch):
     assert _rows(out / 'rubio_pending.csv')[0]['attempts'] == '1'
     assert (out / 'rubio_listing_snapshot.csv').exists()
     # nothing but listing/sitemap requests
-    assert all(c == IDX or c.endswith('.xml') for c in s.calls)
+    assert all(c in (IDX, rb._ROBOTS_URL) or c.endswith('.xml') for c in s.calls)
 
 
 def test_sitemap_fetch_cap_logs_what_it_drops(tmp_path, monkeypatch):

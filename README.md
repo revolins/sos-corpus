@@ -132,7 +132,7 @@ Every Monday at 06:00 UTC, a GitHub Actions workflow:
 
 The workflow can also be triggered manually via **Actions → Rubio Corpus Update → Run workflow**.
 
-**If state.gov refuses the crawler.** Since late October 2026, state.gov's firewall refuses automated clients (HTTP 403/405). The crawler identifies itself as `sos-corpus-research/1.0` and does not try to get around a block. When it is refused, the run publishes nothing, keeps its pending queue and discovery floor so nothing is lost, and opens the issue *"Rubio update: state.gov refused automated access"*. The issue closes itself on the first run that gets through.
+**If state.gov refuses the crawler.** Since late October 2026, state.gov's firewall refuses automated clients (HTTP 403/405). The crawler identifies itself as `sos-corpus-research/1.0` and does not try to get around a block. When it is refused, the run publishes nothing, keeps its pending queue and discovery floor so nothing is lost, and opens the issue *"Rubio update: state.gov refused automated access"*. The issue closes itself on the first run that gets through. Meanwhile a maintainer can run the same fetch from their own computer with `local_fetch/local_fetch.py`. It uses the same honest crawler and records every exchange with state.gov, then opens a pull request. CI replays the recording offline and accepts the bundle only if it reproduces the same rows byte for byte. Merging the pull request publishes the release. See [local_fetch/README.md](local_fetch/README.md).
 
 ### Which releases are kept
 

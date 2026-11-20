@@ -40,4 +40,4 @@ jobs:
         run: pip install -r scripts/requirements.txt pytest
 
       - name: Run tests
-        run: python -m pytest -q tests
+        run: python -m pytest -q tests local_fetch/tests
