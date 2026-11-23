@@ -1,0 +1,25 @@
+{
+ "run_id": "local-20261123T203920Z",
+ "since": "2026-08-18",
+ "mode": "offline pages",
+ "listed": 0,
+ "in_window": 0,
+ "unique": 0,
+ "dup_slots": 0,
+ "dup_slots_after_rewalk": 0,
+ "failed_pages": [],
+ "sitemaps_failed": 0,
+ "discovery_complete": false,
+ "candidates": 35,
+ "to_fetch": 19,
+ "fetched": 19,
+ "failed": 0,
+ "written": 19,
+ "skipped_by_reason": {},
+ "pending": 0,
+ "stuck": 0,
+ "requests": {
+  "200": 19
+ },
+ "source": "offline_pages"
+}
