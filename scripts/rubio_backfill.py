@@ -2217,7 +2217,9 @@ def load_discovery_state(path: Path | None) -> dict:
 
 def save_discovery_state(path: Path, state: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, 'w', encoding='utf-8') as f:
+    # newline='\n' here and below: outputs must be the same bytes on every OS, or a
+    # bundle fetched on Windows would not replay identically on CI's Linux.
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(state, f, indent=1, sort_keys=True)
         f.write('\n')
 
@@ -2549,7 +2551,7 @@ def _finish_http(ok: bool) -> None:
                 'requests_total': session.seq,
                 'requests_by_status': dict(sorted(REQUEST_TALLY.items())),
                 'completed': ok}
-        with open(Path(run['record_dir']) / 'meta.json', 'w', encoding='utf-8') as f:
+        with open(Path(run['record_dir']) / 'meta.json', 'w', encoding='utf-8', newline='\n') as f:
             json.dump(meta, f, indent=1, sort_keys=True)
             f.write('\n')
     if run.get('replay_dir') and session is not None and ok:
@@ -2668,7 +2670,7 @@ def run(args: argparse.Namespace) -> None:
         # failed crawl -- nothing advanced, nothing lost -- but a distinct exit code
         # so the workflow can report the block instead of failing as a crash.
         write_discovery_sidecars()
-        with open(side['summary'], 'w', encoding='utf-8') as f:
+        with open(side['summary'], 'w', encoding='utf-8', newline='\n') as f:
             json.dump({'run_id': run_id, 'date': today, 'access_refused': True,
                        'refused_url': e.url, 'refused_status': e.status,
                        'discovery_complete': False,
@@ -2983,7 +2985,7 @@ def run(args: argparse.Namespace) -> None:
     if refused is not None:
         summary.update(access_refused=True, refused_url=refused.url,
                        refused_status=refused.status)
-    with open(side['summary'], 'w', encoding='utf-8') as f:
+    with open(side['summary'], 'w', encoding='utf-8', newline='\n') as f:
         json.dump(summary, f, indent=1)
         f.write('\n')
     _gh_output(rows_written=len(rows_out), fetched=len(fetched_ok), fetch_failed=failed,

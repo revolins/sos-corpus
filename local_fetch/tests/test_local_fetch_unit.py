@@ -301,3 +301,28 @@ def test_offline_mode_needs_a_pages_directory(tmp_path):
         LF.main(['--mode', 'offline'])
     with pytest.raises(SystemExit):
         LF.main(['--offline-pages', str(tmp_path / 'nope')])
+
+
+def test_bundle_bytes_are_the_same_on_every_os(made_offline):
+    """Text the scraper writes with '\n' must not become CRLF on Windows: the replay on
+    CI's Linux compares bytes. (CSV rows are CRLF by the csv module on every OS.)"""
+    bundle, _ = made_offline
+    for p in bundle.rglob('*'):
+        if (p.is_file() and p.suffix in ('.json', '.jsonl', '.txt')
+                and (p.parent.name != 'inputs' or p.name == 'rubio_offline_urls.txt')):
+            assert b'\r\n' not in p.read_bytes(), p.relative_to(bundle)
+
+
+def test_seed_files_are_staged_as_the_repository_stores_them():
+    """Not the working copy: on Windows core.autocrlf gives it CRLF, CI checks out LF."""
+    for name in B.CHECKED_IN:
+        want = subprocess.run(['git', 'show', f'HEAD:data/{name}'], cwd=B.REPO,
+                              capture_output=True).stdout
+        assert LF.checked_in_bytes(name) == want and b'\r\n' not in want
+
+
+def test_git_stores_bundles_byte_for_byte():
+    out = subprocess.run(['git', 'check-attr', 'text', '--',
+                          'local_fetch/bundles/2026-11-23/outputs/rubio_new.csv'],
+                         cwd=B.REPO, capture_output=True, text=True).stdout
+    assert out.strip().endswith('text: unset'), out
