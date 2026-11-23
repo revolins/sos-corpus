@@ -581,7 +581,9 @@ def run(args: argparse.Namespace) -> int:
         Path(args.missing_urls_out).write_text(
             '# in-scope ground-truth items missing from the corpus '
             '(rubio_coverage_reconcile.py)\n' + ''.join(u + '\n' for u in miss),
-            encoding='utf-8')
+            # LF on every OS: local_fetch commits this file in a bundle, and CI
+            # compares it byte for byte with the one it derives on Linux.
+            encoding='utf-8', newline='\n')
         print(f'[rubio_coverage_reconcile] wrote {len(miss)} missing URL(s) to '
               f'{args.missing_urls_out}', file=sys.stderr)
 

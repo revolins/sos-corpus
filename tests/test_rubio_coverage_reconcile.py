@@ -255,6 +255,7 @@ def test_cli_exit_codes_and_outputs(tmp_path):
     assert s['items']['item_recall'] == 0.5
     assert s['rubio_rows'] == 2 and s['turns']['rows_recall_below_min_ids'] == ['1']
     assert (tmp_path / 'miss.txt').read_text().splitlines()[-1] == U + 'missing-one/'
+    assert b'\r\n' not in (tmp_path / 'miss.txt').read_bytes()     # same bytes on every OS
     with open(out / 'coverage_turns.csv', newline='', encoding='utf-8') as f:
         turns = {r['Row Id']: r for r in csv.DictReader(f)}
     assert turns['0']['status'] == 'ok' and turns['1']['status'] == 'warn'
