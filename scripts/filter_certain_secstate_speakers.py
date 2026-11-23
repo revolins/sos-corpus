@@ -10,7 +10,9 @@ from pathlib import Path
 from tqdm import tqdm
 
 
-csv.field_size_limit(sys.maxsize)
+# Not sys.maxsize: a C long is 32-bit on Windows, so that raises OverflowError there
+# (and broke `import rubio_backfill`, hence local_fetch, on Windows).
+csv.field_size_limit(2 ** 31 - 1)
 
 INPUT_CSV = Path('secstate_naive_corpus.csv')
 OUTPUT_CSV = Path('secstate_naive_corpus_certain_secstate_speakers.csv')

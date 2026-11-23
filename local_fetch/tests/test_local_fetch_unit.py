@@ -228,3 +228,76 @@ def test_env_problems_names_the_mismatch():
     fp = {'python': '3.12', 'packages': {'beautifulsoup4': '4.15.0', 'lxml': '5.3.0'}}
     probs = B.env_problems(fp)
     assert any('Python 3.12' in p for p in probs) and any(p.startswith('lxml 5.3.0') for p in probs)
+
+
+# --- offline pages (saved by hand in a browser) --------------------------------
+
+@pytest.fixture
+def made_offline(tmp_path, monkeypatch):
+    """(bundle, release_dir): an offline bundle built by the driver's own fetch()."""
+    from test_offline_pages import REMARKS, _remarks_page, _saved
+    (tmp_path / 'src').mkdir()
+    corpus, out, excl, supp = _e2e_setup(tmp_path / 'src')
+    release = tmp_path / 'release'
+    release.mkdir()
+    shutil.copyfile(corpus, release / 'corpus.csv')
+    shutil.copyfile(out / 'rubio_pending.csv', release / 'rubio_pending.csv')
+    shutil.copyfile(excl, release / 'rubio_coverage_exclusions.csv')
+    shutil.copyfile(supp, release / 'rubio_supplemental_urls.txt')
+    pages = tmp_path / 'pages'
+    pages.mkdir()
+    (pages / 'Remarks to the Press.htm').write_text(_saved(_remarks_page(), REMARKS), encoding='utf-8')
+    (pages / 'Certificate.php.htm').write_text('<html><head></head><body>mine</body></html>')
+    monkeypatch.setattr(LF, 'WORK', tmp_path / 'work')
+    bundle = tmp_path / 'bundles' / '2026-11-23'
+    assert LF.fetch(release, bundle, 'offline', 5.0, pages) == 0
+    commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=B.REPO, capture_output=True,
+                            text=True).stdout.strip()
+    LF.write_manifest(bundle, tag=TAG, commit=commit, mode='offline', rate_limit=5.0,
+                      release=release)
+    return bundle, release
+
+
+def test_an_offline_bundle_passes_everything_and_says_where_it_came_from(made_offline):
+    bundle, release = made_offline
+    assert B.check_hygiene(bundle) == []
+    assert B.check_base(bundle, release, TAG) == []      # the URL list is the bundle's own
+    assert B.check_args(bundle) == []
+    assert B.replay(bundle, release / 'corpus.csv') == []
+    assert B.check_forward(bundle, release / 'corpus.csv') == []
+    m = B.load_manifest(bundle)
+    assert m['mode'] == 'offline' and m['source'] == 'offline_pages' and m['offline_pages'] == 1
+    rows = list(csv.DictReader(open(bundle / 'outputs' / 'rubio_new.csv', newline='', encoding='utf-8')))
+    assert [r['discovery_source'] for r in rows] == ['offline']
+    body = LF.pr_body(bundle, m)
+    assert 'saved by hand in a browser' in body and 'Requests to state.gov' not in body
+
+
+def test_an_offline_bundle_cannot_claim_a_crawl_and_a_crawl_cannot_claim_offline(made_offline):
+    bundle, _ = made_offline
+    meta_p = bundle / 'http' / 'meta.json'
+    meta = json.loads(meta_p.read_text())
+    meta['user_agent'] = rb._HEADERS['User-Agent']
+    meta_p.write_text(json.dumps(meta))
+    assert any('must not record a User-Agent' in x for x in B.check_args(bundle))
+    m = B.load_manifest(bundle)
+    m['mode'] = 'supplemental'
+    (bundle / 'manifest.json').write_text(json.dumps(m))
+    assert any('source is offline_pages but the mode' in x for x in B.check_args(bundle))
+
+
+def test_offline_import_note(made_offline, tmp_path, monkeypatch):
+    bundle, release = made_offline
+    gh = tmp_path / 'gh_out'
+    monkeypatch.setenv('GITHUB_OUTPUT', str(gh))
+    monkeypatch.setattr(B, 'check_commit', lambda b, ref='origin/main': [])
+    assert B.import_bundle(bundle, release, TAG) == 0
+    note = dict(l.split('=', 1) for l in gh.read_text().splitlines())['local_note']
+    assert 'saved by hand in a browser' in note and 'no automated requests' in note
+
+
+def test_offline_mode_needs_a_pages_directory(tmp_path):
+    with pytest.raises(SystemExit):
+        LF.main(['--mode', 'offline'])
+    with pytest.raises(SystemExit):
+        LF.main(['--offline-pages', str(tmp_path / 'nope')])

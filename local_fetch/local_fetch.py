@@ -4,7 +4,10 @@
 state.gov refuses GitHub's runners and the lab server (since about 2026-10-26). This
 runs the weekly job's own scrape command, unchanged, from a maintainer's machine:
   * the crawler's honest User-Agent (sos-corpus-research/1.0 +repo URL);
-  * robots.txt obeyed; at least --rate-limit seconds between requests (default 2);
+  * robots.txt obeyed; at least --rate-limit seconds between requests (default 5);
+    a 429/503 Retry-After is honoured (up to 2 minutes);
+  * only the date range [newest corpus date - 7 days, today] is walked (further back
+    only if the last complete run was older), so a week's update is a few dozen requests;
   * it stops at the first refusal (exit 3) and commits nothing;
   * no browser impersonation, proxies or retries from elsewhere: a refusal is the answer.
 
@@ -18,6 +21,14 @@ local-fetch/<date> -> push -> open a PR.
 
   python local_fetch/local_fetch.py              # the weekly run
   python local_fetch/local_fetch.py --no-push    # commit locally only, to inspect first
+  python local_fetch/local_fetch.py --offline-pages data/OfflineSOSPages --no-push
+
+--offline-pages DIR builds the bundle from state.gov pages a person saved in a
+browser (Save Page As, "Webpage, Complete" or "HTML only") instead of fetching:
+no request is sent, the run reads only those pages (matched by their canonical
+URL), and the bundle says source: offline_pages. The rows are parsed by the same
+code and replay-verified the same way. It discovers nothing, so the discovery floor
+stays where it was and the next live run still walks the whole gap.
 
 Needs: git, the GitHub CLI (`gh auth login`, write access), and
 `pip install -r local_fetch/requirements.txt`. Exit codes: 0 done, 3 refused by
@@ -164,7 +175,16 @@ def stage_release(release: Path) -> str:
 
 # --- the fetch --------------------------------------------------------------
 
-def fetch(release: Path, bundle: Path, mode: str, rate_limit: float) -> int:
+def fetch(release: Path, bundle: Path, mode: str, rate_limit: float,
+          offline_pages: Path | None = None) -> int:
+    idx = None
+    if offline_pages is not None:          # before anything is written
+        from offline_pages import index_pages, write_url_list
+        idx = index_pages(offline_pages)
+        for name, why in idx.skipped:
+            log(f'  ignoring {name}: {why}')
+        if not idx.urls:
+            raise Stop(f'no saved state.gov pages found in {offline_pages}')
     run_dir = WORK / 'run'
     shutil.rmtree(run_dir, ignore_errors=True)
     run_dir.mkdir(parents=True)
@@ -174,9 +194,15 @@ def fetch(release: Path, bundle: Path, mode: str, rate_limit: float) -> int:
             shutil.copyfile(release / name, bundle / 'inputs' / name)
             shutil.copyfile(release / name, run_dir / name)
     B._link_or_copy(release / 'corpus.csv', run_dir / 'corpus.csv')
-    log(f'fetching ({mode}; at least {rate_limit:g}s between requests) ...')
-    rc = B.run_backfill(run_dir, mode, ['--rate-limit', f'{rate_limit:g}',
-                                        '--record', str(bundle / 'http')])
+    extra = ['--rate-limit', f'{rate_limit:g}', '--record', str(bundle / 'http')]
+    if idx is not None:
+        n = write_url_list(idx, run_dir / 'rubio_offline_urls.txt')
+        shutil.copyfile(run_dir / 'rubio_offline_urls.txt', bundle / 'inputs' / 'rubio_offline_urls.txt')
+        extra += ['--offline-pages', str(offline_pages)]
+        log(f'reading {n} saved page(s) from {offline_pages} (no requests to state.gov) ...')
+    else:
+        log(f'fetching ({mode}; at least {rate_limit:g}s between requests) ...')
+    rc = B.run_backfill(run_dir, mode, extra)
     if rc == 0:
         (bundle / 'outputs').mkdir()
         for name in B.OUTPUTS + B.OPTIONAL_OUTPUTS:
@@ -203,6 +229,10 @@ def write_manifest(bundle: Path, *, tag: str, commit: str, mode: str, rate_limit
         'inputs': {p.name: B.sha256(p) for p in sorted((bundle / 'inputs').iterdir())},
         'outputs': {p.name: B.sha256(p) for p in sorted((bundle / 'outputs').iterdir())},
     }
+    if mode == 'offline':
+        urls = (bundle / 'inputs' / 'rubio_offline_urls.txt').read_text(encoding='utf-8')
+        m['source'] = B.OFFLINE_SOURCE
+        m['offline_pages'] = sum(1 for l in urls.splitlines() if l.startswith('http'))
     (bundle / 'manifest.json').write_text(json.dumps(m, indent=1, sort_keys=True) + '\n',
                                           encoding='utf-8')
     return m
@@ -221,10 +251,14 @@ def pr_body(bundle: Path, m: dict) -> str:
     meta = json.loads((bundle / 'http' / 'meta.json').read_text(encoding='utf-8'))
     with open(bundle / 'outputs' / 'rubio_new.csv', newline='', encoding='utf-8') as f:
         rows = list(csv.DictReader(f))
+    offline = m.get('mode') == 'offline'
+    source = (f'- **Source:** {m.get("offline_pages", 0)} state.gov pages saved by hand in a '
+              f'browser; no automated requests were sent' if offline else
+              f'- **Requests to state.gov:** {meta.get("requests_total", 0)} '
+              f'(by status: {meta.get("requests_by_status", {})})')
     lines = [f'Local fetch of {bundle.name}, against **{m["base_tag"]}** (mode: {m["mode"]}).', '',
              f'- **New rows:** {len(rows)}',
-             f'- **Requests to state.gov:** {meta.get("requests_total", 0)} '
-             f'(by status: {meta.get("requests_by_status", {})})',
+             source,
              f'- **Fetched / failed / pending:** {s.get("fetched", 0)} / {s.get("failed", 0)} / '
              f'{s.get("pending", 0)}',
              f'- **Discovery complete:** {s.get("discovery_complete")}',
@@ -237,6 +271,11 @@ def pr_body(bundle: Path, m: dict) -> str:
         if len(rows) > 60:
             lines.append(f'| | ... and {len(rows) - 60} more | |')
         lines.append('')
+    if offline:
+        lines += ['These pages were read from browser-saved copies because state.gov refuses '
+                  'automated clients. Nothing was discovered: the discovery floor did not move, '
+                  'so the next live run still walks the whole gap. Pages that were not saved '
+                  'are not in this PR.', '']
     lines += ['The alignment tests passed locally: replaying the recorded HTTP exchanges '
               'reproduced every output byte for byte. CI re-runs them on this PR together '
               'with a dry-run merge and the verifier.', '',
@@ -256,7 +295,10 @@ def commit_and_push(bundle: Path, m: dict, push: bool) -> None:
         sh('git', 'add', '--', rel)
         sh('git', '-c', f'user.name={login}', '-c', f'user.email={email}', 'commit', '-q',
            '-m', f'Local fetch {bundle.name}: {n} new Rubio row(s)\n\n'
-                 f'Base release {m["base_tag"]}; replay-verified locally.')
+                 f'Base release {m["base_tag"]}; '
+                 + (f'{m.get("offline_pages")} browser-saved pages, no requests sent; '
+                    if m.get('mode') == 'offline' else '')
+                 + 'replay-verified locally.')
         if push:
             sh('git', 'push', '-q', '-u', 'origin', branch)
             body = WORK / 'pr_body.md'
@@ -277,14 +319,26 @@ def main(argv: list[str] | None = None) -> int:
     import rubio_backfill as rb
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--mode', default='incremental', choices=rb.CI_MODES)
-    ap.add_argument('--rate-limit', type=float, default=2.0,
+    ap.add_argument('--rate-limit', type=float, default=5.0,
                     help='seconds between requests (default %(default)s, minimum 1); '
                          'a robots.txt Crawl-delay raises it')
     ap.add_argument('--force', action='store_true', help='skip the once-a-week guard')
     ap.add_argument('--no-push', action='store_true', help='commit locally, do not push or open a PR')
+    ap.add_argument('--offline-pages', default=None, metavar='DIR',
+                    help='build the bundle from state.gov pages saved by hand in a browser '
+                         '(mode offline): no request is sent')
     args = ap.parse_args(argv)
     if args.rate_limit < B.MIN_RATE_LIMIT:
         ap.error(f'--rate-limit must be at least {B.MIN_RATE_LIMIT:g}')
+    offline = Path(args.offline_pages).resolve() if args.offline_pages else None
+    if offline is not None:
+        if args.mode not in ('incremental', 'offline'):
+            ap.error('--offline-pages cannot be combined with --mode ' + args.mode)
+        if not offline.is_dir():
+            ap.error(f'--offline-pages: {offline} is not a directory')
+        args.mode = 'offline'
+    elif args.mode == 'offline':
+        ap.error('--mode offline needs --offline-pages DIR')
     today = datetime.now(timezone.utc).date()
     bundle = B.BUNDLES / today.isoformat()
     release = WORK / 'release'
@@ -293,7 +347,7 @@ def main(argv: list[str] | None = None) -> int:
         if bundle.exists():
             raise Stop(f'{bundle.relative_to(REPO)} already exists')
         tag = stage_release(release)
-        rc = fetch(release, bundle, args.mode, args.rate_limit)
+        rc = fetch(release, bundle, args.mode, args.rate_limit, offline)
         if rc != 0:
             summ = WORK / 'run' / 'rubio_backfill_summary.json'
             shutil.rmtree(bundle, ignore_errors=True)

@@ -168,6 +168,71 @@ def test_sitemaps_read_release_children_without_rubio_filter():
     assert '/translations/' in log.rows[0]['url']
 
 
+def _urlset(*entries) -> str:
+    rows = ''.join(f'<url><loc>{loc}</loc><lastmod>{mod}T12:00:00+00:00</lastmod></url>'
+                   for loc, mod in entries)
+    return ('<?xml version="1.0" encoding="UTF-8"?><urlset '
+            f'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{rows}</urlset>')
+
+
+def test_narrow_window_skips_old_child_sitemaps_and_old_entries():
+    """A one-week window: no child sitemap untouched since `since` is requested (page
+    sitemaps included), and release entries from the floor month but last modified
+    before `since` are not candidates."""
+    since = date(2026, 11, 13)
+    index = ('<?xml version="1.0" encoding="UTF-8"?><sitemapindex '
+             'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+             f'<sitemap><loc>{WWW}/page-sitemap.xml</loc><lastmod>2026-11-15</lastmod></sitemap>'
+             f'<sitemap><loc>{WWW}/page-sitemap2.xml</loc><lastmod>2025-06-01</lastmod></sitemap>'
+             f'<sitemap><loc>{WWW}/state_press_release-sitemap9.xml</loc><lastmod>2026-11-18</lastmod></sitemap>'
+             '</sitemapindex>')
+    routes = {
+        f'{WWW}/sitemap_index.xml': index,
+        f'{WWW}/page-sitemap.xml': _urlset(
+            (f'{WWW}/secretary-rubio-remarks-new/', '2026-11-15'),
+            (f'{WWW}/secretary-rubio-remarks-old/', '2026-10-01')),
+        f'{WWW}/state_press_release-sitemap9.xml': _urlset(
+            (f'{SPOKES}/2026/11/this-week/', '2026-11-17'),
+            (f'{SPOKES}/2026/11/early-november/', '2026-11-03'),     # floor month, too old
+            (f'{SPOKES}/2026/10/edited-this-week/', '2026-11-16')),  # URL month < floor
+    }
+    s = FakeSession(routes)
+    stats: dict = {}
+    got = {c.url for c in rb.discover_sitemap_urls(s, 0, since, stats=stats)}
+    assert got == {f'{WWW}/secretary-rubio-remarks-new/', f'{SPOKES}/2026/11/this-week/'}
+    assert f'{WWW}/page-sitemap2.xml' not in s.calls
+    assert stats['sitemaps_old'] == 1 and stats['sitemaps_read'] == 2
+
+
+def test_in_floor_window():
+    since = date(2026, 11, 13)
+    assert rb._in_floor_window(f'{SPOKES}/2026/11/a/', date(2026, 11, 13), since)
+    assert not rb._in_floor_window(f'{SPOKES}/2026/11/a/', date(2026, 11, 12), since)
+    assert rb._in_floor_window(f'{SPOKES}/2026/11/a/', None, since)          # no lastmod: kept
+    assert not rb._in_floor_window(f'{SPOKES}/2026/10/a/', date(2026, 11, 20), since)
+    assert rb._in_floor_window(f'{WWW}/undated/', None, since)
+    assert not rb._in_floor_window(f'{WWW}/undated/', date(2026, 1, 1), since)
+
+
+def test_retry_delay_honours_retry_after_with_cap():
+    class R(FakeResp):
+        def __init__(self, status, headers):
+            super().__init__('u', status)
+            self.headers = headers
+
+    def err(status, headers=None):
+        return requests.HTTPError('x', response=R(status, headers or {}))
+
+    rb_backoff = rb._FETCH_BACKOFF          # 0.0 under the autouse fixture
+    assert rb._retry_delay(1, err(429, {'Retry-After': '30'})) == 30.0
+    assert rb._retry_delay(2, err(503, {'Retry-After': '9999'})) == rb._RETRY_AFTER_CAP
+    assert rb._retry_delay(1, err(500, {'Retry-After': '30'})) == rb_backoff * 1
+    assert rb._retry_delay(2, err(429)) == rb_backoff * 2
+    assert rb._retry_delay(1, requests.ConnectionError('down')) == rb_backoff * 1
+    # A response without a headers attribute (as replay serves) falls back to backoff.
+    assert rb._retry_delay(1, requests.HTTPError('x', response=FakeResp('u', 429))) == rb_backoff
+
+
 def test_sitemap_failures_are_recorded_not_fatal():
     routes = _sitemap_routes()
     routes[f'{WWW}/state_briefing-sitemap.xml'] = FakeResp('x', 503, 'busy')
@@ -312,6 +377,16 @@ def test_floor_is_min_of_last_complete_floor_and_buffer():
     assert rb.resolve_since(_args(since='2026-10-01'), idx, {'last_complete_floor': '2026-07-01'}) == date(2026, 10, 1)
     assert rb.resolve_since(_args(), _index(date(2025, 2, 1)), {}) == rb.RUBIO_START
     assert rb.resolve_since(_args(), idx, {'last_complete_floor': 'garbage'}) == date(2026, 8, 18)
+
+
+def test_default_window_starts_a_week_before_the_newest_date():
+    import argparse
+    idx = _index(date(2026, 11, 18))
+    bare = argparse.Namespace(full_rescan=False, since=None)
+    assert rb._FLOOR_BUFFER_DAYS == 7
+    assert rb.resolve_since(bare, idx, {}) == date(2026, 11, 11)
+    # An older last complete run (e.g. after refused weeks) still pulls the start back.
+    assert rb.resolve_since(bare, idx, {'last_complete_floor': '2026-08-20'}) == date(2026, 8, 20)
 
 
 def test_missing_state_file_warns(tmp_path):
@@ -673,7 +748,7 @@ def test_run_end_to_end_offline(tmp_path, monkeypatch):
     assert [(p['url'].rsplit('/', 2)[-2], p['attempts']) for p in pending] == [('a-page-that-503s', '1')]
 
     state = json.loads((out / 'rubio_discovery_state.json').read_text())
-    assert state['last_complete_floor'] == '2026-07-12'          # 2026-09-10 - 60d
+    assert state['last_complete_floor'] == '2026-09-03'          # 2026-09-10 - 7d
     assert state['last_run']['complete'] is True
     assert any('visa-restrictions' in k for k in state['sitemap_classified'])
 

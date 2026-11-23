@@ -50,6 +50,7 @@ import sys
 import time
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urljoin, urlsplit
@@ -141,8 +142,15 @@ _RELEASE_SITEMAP_PREFIXES = (
 # The rest are logged and retried. Raised from 50 on 2026-10-26: 50 left ~300
 # release candidates unfetched every week.
 _SITEMAP_FETCH_CAP = 150
-# Floor slack below the latest corpus Date (was 14; audit D-04).
-_FLOOR_BUFFER_DAYS = 60
+# Floor slack below the latest corpus Date: an incremental run covers
+# [latest corpus Date - 7 days, today], never starting later than last_complete_floor.
+# 7 days catches a transcript posted a few days after a later-dated one; links not in
+# the corpus are kept whatever their month, so the slack only costs listing pages.
+# (Was 14, then 60 -- audit D-04 -- cut to 7 on 2026-11-20 to keep the weekly
+# footprint small.)
+_FLOOR_BUFFER_DAYS = 7
+# Longest Retry-After (seconds) honoured on a 429/503 before the next attempt.
+_RETRY_AFTER_CAP = 120.0
 # A pending URL that has failed in this many runs is "stuck" (issue opened in CI).
 _STUCK_ATTEMPTS = 3
 
@@ -229,6 +237,43 @@ class SkipLog:
         _write_rows(path, _SKIPPED_COLUMNS, self.rows)
 
 
+def _retry_after_seconds(value: str, now: float | None = None) -> float | None:
+    """Retry-After as delta-seconds or HTTP-date; None when absent/unparseable.
+    (Shared with rubio_ground_truth.PoliteFetcher.)"""
+    value = (value or '').strip()
+    if not value:
+        return None
+    if value.isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    ref = now if now is not None else time.time()
+    return max(0.0, when.timestamp() - ref)
+
+
+def _retry_delay(attempt: int, error: Exception) -> float:
+    """Seconds to wait before the next attempt: the fixed backoff, or longer when a
+    429/503 answer asks for it with Retry-After (capped at _RETRY_AFTER_CAP).
+
+    Only the wait changes, never the number of attempts or their order, so a
+    replayed run (which records no headers and skips sleeps) stays byte-identical.
+    """
+    delay = _FETCH_BACKOFF * attempt
+    resp = getattr(error, 'response', None)
+    if getattr(resp, 'status_code', None) in (429, 503):
+        headers = getattr(resp, 'headers', None) or {}
+        asked = _retry_after_seconds(headers.get('Retry-After', ''))
+        if asked is not None:
+            delay = max(delay, min(asked, _RETRY_AFTER_CAP))
+    return delay
+
+
 def _get_with_retry(session: requests.Session, url: str, *,
                     attempts: int = _FETCH_ATTEMPTS,
                     label: str = '') -> "requests.Response":
@@ -264,7 +309,7 @@ def _get_with_retry(session: requests.Session, url: str, *,
             if isinstance(status, int) and 400 <= status < 500 and status not in _RETRYABLE_4XX:
                 break                 # 404, 410, ...: asking again will not change it
             if attempt < attempts:
-                delay = _FETCH_BACKOFF * attempt
+                delay = _retry_delay(attempt, e)
                 print(f'[rubio_backfill] retry {attempt}/{attempts - 1} in {delay:.0f}s '
                       f'for {label or url}: {e}', file=sys.stderr)
                 _sleep(delay)
@@ -658,11 +703,18 @@ def _sitemap_kind(loc: str) -> str:
 
 
 def _in_floor_window(loc: str, lastmod: date | None, since: date) -> bool:
-    """URL /YYYY/MM/ >= the floor month when the URL has one; otherwise lastmod >=
-    since; an undated URL with no lastmod is kept (decided after the fetch)."""
+    """URL /YYYY/MM/ >= the floor month when the URL has one, AND lastmod >= since
+    when the entry has a lastmod; an entry with neither is kept (decided after the
+    fetch).
+
+    lastmod is the last EDIT date, never earlier than publication, so anything
+    published on or after `since` has lastmod >= since. Checking it narrows a
+    week-long window from the floor's whole month of press releases (~1.2k) to
+    roughly that week's.
+    """
     ym = url_year_month(loc)
-    if ym is not None:
-        return ym >= (since.year, since.month)
+    if ym is not None and ym < (since.year, since.month):
+        return False
     return lastmod is None or lastmod >= since
 
 
@@ -690,9 +742,9 @@ def discover_sitemap_urls(session: requests.Session, rate_limit: float,
                       have no 'rubio' in the slug. Kept when the URL month (or,
                       undated, lastmod) is inside the floor window; the
                       post-fetch classification decides, and run() caps how
-                      many are fetched per run. A release child sitemap whose
-                      own lastmod is before `since` holds nothing newer and is
-                      not fetched.
+                      many are fetched per run.
+    Any child sitemap (page or release) whose own lastmod is before `since` holds
+    nothing newer and is not fetched.
 
     Best-effort: a sitemap failure is a warning (recorded in stats), since the
     remarks archive is the primary source. `attempts` is per sitemap; once
@@ -720,14 +772,17 @@ def discover_sitemap_urls(session: requests.Session, rate_limit: float,
         if not kind:
             continue
         child_mod = _parse_lastmod((sitemap.findtext(f'{_SITEMAP_NS}lastmod') or '').strip())
-        if kind == 'release' and child_mod and child_mod < since:
+        # A child sitemap's lastmod is its newest entry's, so one last modified
+        # before `since` holds nothing in the window: page and release alike.
+        # (Under --full-rescan `since` is RUBIO_START, so this skips almost nothing.)
+        if child_mod and child_mod < since:
             stats['sitemaps_old'] += 1
             continue
         children.append((loc, kind))
 
     n_page = sum(k == 'page' for _, k in children)
     print(f'[rubio_backfill] Found {n_page} page sitemaps and {len(children) - n_page} '
-          f'release sitemaps to scan ({stats["sitemaps_old"]} release sitemap(s) last '
+          f'release sitemaps to scan ({stats["sitemaps_old"]} sitemap(s) last '
           f'modified before {since} skipped)')
 
     for i, (sitemap_url, kind) in enumerate(children, 1):
@@ -2180,8 +2235,8 @@ def resolve_since(args: argparse.Namespace, index: "CorpusIndex",
          the following Tuesday, after Monday's run has already moved past it.
       2. Items are added to the remarks collection late or backdated
          (serbia-statehood-day, dated 2026-02, appeared months later; audit
-         D-04). 60 days, not the old 14, because the floor is only a walk
-         limit: links whose key is not in the corpus are kept regardless.
+         D-04). The floor is only a walk limit: links whose key is not in the
+         corpus are kept regardless, so a short buffer (7 days) is enough.
       3. One failed weekly run must not leave a permanent hole.
     Why last_complete_floor: the latest Date in the corpus advances even when
     a run only half-walked the archive (2026-10-12 merged 13 rows with 9
@@ -2358,7 +2413,8 @@ def load_robots(session) -> RobotFileParser:
     return rp
 
 
-CI_MODES = ('incremental', 'supplemental', 'full_rescan')
+CI_MODES = ('incremental', 'supplemental', 'full_rescan', 'offline')
+_OFFLINE_URLS_NAME = 'rubio_offline_urls.txt'
 
 
 def ci_args(data_dir: str | Path = 'data', mode: str = 'incremental') -> list[str]:
@@ -2375,8 +2431,11 @@ def ci_args(data_dir: str | Path = 'data', mode: str = 'incremental') -> list[st
            '--output', str(d / 'rubio_new.csv'),
            '--pending', str(d / _PENDING_NAME),
            '--discovery-state', str(d / _STATE_NAME),
-           '--exclusions', str(d / 'rubio_coverage_exclusions.csv'),
-           '--urls', str(d / 'rubio_supplemental_urls.txt')]
+           '--exclusions', str(d / 'rubio_coverage_exclusions.csv')]
+    if mode == 'offline':
+        # Pages saved by hand (local_fetch --offline-pages): only those are read.
+        return out + ['--offline-urls', str(d / _OFFLINE_URLS_NAME), '--supplemental-only']
+    out += ['--urls', str(d / 'rubio_supplemental_urls.txt')]
     for opt in ('rubio_held.csv', 'rubio_gt_missing.txt'):
         if (d / opt).exists():
             out += ['--urls', str(d / opt)]
@@ -2441,7 +2500,20 @@ def _open_session(args: argparse.Namespace, run_id: str, today: str):
     """A plain requests.Session, or a recording / replaying one (http_record.py)."""
     global _sleep, _budget_clock
     replay_dir, record_dir = getattr(args, 'replay', None), getattr(args, 'record', None)
-    if replay_dir:
+    offline_dir = getattr(args, 'offline_pages', None)
+    if offline_dir:
+        # Saved pages, recorded like any fetch when --record is given, so a bundle's
+        # replay re-parses exactly the HTML that was read.
+        from offline_pages import OfflineSession
+        session = OfflineSession(Path(offline_dir))
+        for name, why in session.index.skipped:
+            print(f'[rubio_backfill] offline: ignoring {name}: {why}', file=sys.stderr)
+        _sleep = lambda _s: None              # noqa: E731 -- no server to be polite to
+        if record_dir:
+            from http_record import RecordingSession
+            session = RecordingSession(Path(record_dir), session)
+            _budget_clock = session.clock
+    elif replay_dir:
         from http_record import ReplaySession
         session = ReplaySession(Path(replay_dir))
         _sleep = lambda _s: None              # noqa: E731 -- nothing to wait for offline
@@ -2454,7 +2526,7 @@ def _open_session(args: argparse.Namespace, run_id: str, today: str):
         session = requests.Session()
     _HTTP_RUN.update(session=session, run_id=run_id, today=today,
                      started=datetime.now(timezone.utc).isoformat(timespec='seconds'),
-                     record_dir=record_dir, replay_dir=replay_dir)
+                     record_dir=record_dir, replay_dir=replay_dir, offline=bool(offline_dir))
     return session
 
 
@@ -2465,8 +2537,13 @@ def _finish_http(ok: bool) -> None:
     session = run.get('session')
     if run.get('record_dir') and session is not None:
         session.close()
+        offline = run.get('offline')
         meta = {'run_id': run['run_id'], 'today': run['today'],
-                'user_agent': _HEADERS['User-Agent'], 'robots_agent': _ROBOTS_AGENT,
+                # Offline pages were saved by a person in a browser: no request was
+                # sent with the crawler's identity, and the recording says so.
+                'source': 'offline_pages' if offline else 'state.gov',
+                'user_agent': None if offline else _HEADERS['User-Agent'],
+                'robots_agent': None if offline else _ROBOTS_AGENT,
                 'started': run['started'],
                 'finished': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                 'requests_total': session.seq,
@@ -2492,11 +2569,13 @@ def run(args: argparse.Namespace) -> None:
     output_path = Path(args.output)
     side = _sidecar_paths(args, output_path.parent)
     url_files = [Path(p) for p in (getattr(args, 'urls', None) or [])]
+    offline_urls = getattr(args, 'offline_urls', None)
+    offline_urls = Path(offline_urls) if offline_urls else None
     # A file named explicitly on the command line must exist. A silently empty
     # supplemental list or exclusions file lets the job go green while the known
     # off-collection items are never fetched (the 2026-10-12 silent-success lesson;
     # both seed files were once gitignored and so absent on the runner).
-    missing = [p for p in url_files if not p.exists()]
+    missing = [p for p in url_files + ([offline_urls] if offline_urls else []) if not p.exists()]
     if getattr(args, 'exclusions', None) and not side['exclusions'].exists():
         missing.append(side['exclusions'])
     if missing:
@@ -2504,7 +2583,9 @@ def run(args: argparse.Namespace) -> None:
                          'not found: ' + ', '.join(str(p) for p in missing))
     rate_limit = float(args.rate_limit)
     dry_run = args.dry_run
-    supplemental_only = bool(getattr(args, 'supplemental_only', False))
+    # Offline pages (scripts/offline_pages.py): only the saved pages are read, so
+    # nothing is discovered and the floor cannot move -- a supplemental-only run.
+    supplemental_only = bool(getattr(args, 'supplemental_only', False)) or bool(offline_urls)
     # A replay re-runs a recorded run as that run: same id (it is in cache-buster
     # URLs and sidecars) and same date (pending first_seen, classification dates).
     meta = {}
@@ -2539,7 +2620,8 @@ def run(args: argparse.Namespace) -> None:
 
     # Step 2: Discover candidates
     session = _open_session(args, run_id, today)
-    mode = ('supplemental only' if supplemental_only else
+    mode = ('offline pages' if offline_urls else
+            'supplemental only' if supplemental_only else
             'full re-scan' if getattr(args, 'full_rescan', False) else 'incremental')
     print(f'[rubio_backfill] Discovery floor: {since} ({mode})')
     extra: list[Candidate] = []
@@ -2552,9 +2634,21 @@ def run(args: argparse.Namespace) -> None:
     # timed out must not age out of the window before it is ever read (F-01).
     extra += [Candidate(r['url'], 'pending', origin=r.get('source') or '')
               for r in pending.values()]
+    if offline_urls:
+        # Saved pages first, so a pending URL that was saved is read (and resolved) as
+        # 'offline'. Any other pending or --urls entry needs a live fetch: it is left
+        # exactly as it was, not recorded as a failure.
+        saved = [Candidate(u, 'offline') for u in read_url_list(offline_urls)]
+        keys = {_live_key(c.url) for c in saved}
+        rest = [c for c in extra if _live_key(c.url) not in keys]
+        extra = saved + [c for c in extra if _live_key(c.url) in keys]
+        print(f'[rubio_backfill] {len(saved)} saved page(s) from {offline_urls.name}; '
+              f'{len(rest)} pending/supplemental URL(s) not saved, left for a live run')
     try:
-        _ROBOTS = load_robots(session)
-        delay = _ROBOTS.crawl_delay(_ROBOTS_AGENT)
+        # robots.txt governs crawling. Reading saved files is not crawling, and asking
+        # the stand-in session for it would only record a request that never happened.
+        _ROBOTS = None if offline_urls else load_robots(session)
+        delay = _ROBOTS.crawl_delay(_ROBOTS_AGENT) if _ROBOTS is not None else None
         if delay and float(delay) > rate_limit:
             print(f'[rubio_backfill] robots.txt Crawl-delay {delay}s > --rate-limit '
                   f'{rate_limit:g}s: using {delay}s')
@@ -2884,6 +2978,8 @@ def run(args: argparse.Namespace) -> None:
         'pending': len(new_pending), 'stuck': len(stuck),
         'requests': dict(sorted(REQUEST_TALLY.items())),
     }
+    if offline_urls:
+        summary['source'] = 'offline_pages'
     if refused is not None:
         summary.update(access_refused=True, refused_url=refused.url,
                        refused_status=refused.status)
@@ -2940,6 +3036,14 @@ def main() -> None:
     parser.add_argument('--supplemental-only', action='store_true',
                         help='Skip sitemap and archive discovery; fetch only --urls and the '
                              'pending queue. The discovery floor state is not advanced.')
+    parser.add_argument('--offline-urls', default=None, metavar='FILE',
+                        help='Read only these URLs (one per line), from pages saved by hand in '
+                             'a browser: --offline-pages at fetch time, --replay afterwards. '
+                             'Implies --supplemental-only; pending and --urls entries not in '
+                             'the list are left as they are. See scripts/offline_pages.py.')
+    parser.add_argument('--offline-pages', default=None, metavar='DIR',
+                        help='Serve requests from the browser-saved pages in DIR (matched by '
+                             'their canonical URL) instead of the network. Needs --offline-urls.')
     parser.add_argument('--rate-limit', default=1.0, type=float,
                         help='Seconds between HTTP requests (default: %(default)s)')
     parser.add_argument('--dry-run', action='store_true',
@@ -3002,6 +3106,13 @@ def main() -> None:
                         help='Print the resolved discovery floor and exit. Used by CI to '
                              'compute the cutoff without duplicating the logic in YAML.')
     args = parser.parse_args()
+    if args.offline_pages and not args.offline_urls:
+        parser.error('--offline-pages needs --offline-urls (the list of saved pages to read)')
+    if args.offline_pages and args.replay:
+        parser.error('--offline-pages and --replay are exclusive (a replay reads its recording)')
+    if args.offline_urls and not (args.offline_pages or args.replay or args.dry_run):
+        parser.error('--offline-urls needs --offline-pages or --replay: saved pages are never '
+                     'fetched from the network')
 
     if args.print_ci_args:
         print('\n'.join(ci_args(args.data_dir, args.print_ci_args)))

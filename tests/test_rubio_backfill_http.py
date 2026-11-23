@@ -107,16 +107,16 @@ def test_permanent_4xx_is_not_retried_but_429_is():
 def test_ci_args(tmp_path):
     d = tmp_path / 'data'
     d.mkdir()
-    base = ['--enriched', f'{d}/corpus.csv', '--output', f'{d}/rubio_new.csv',
-            '--pending', f'{d}/rubio_pending.csv',
-            '--discovery-state', f'{d}/rubio_discovery_state.json',
-            '--exclusions', f'{d}/rubio_coverage_exclusions.csv',
-            '--urls', f'{d}/rubio_supplemental_urls.txt']
+    base = ['--enriched', str(d / 'corpus.csv'), '--output', str(d / 'rubio_new.csv'),
+            '--pending', str(d / 'rubio_pending.csv'),
+            '--discovery-state', str(d / 'rubio_discovery_state.json'),
+            '--exclusions', str(d / 'rubio_coverage_exclusions.csv'),
+            '--urls', str(d / 'rubio_supplemental_urls.txt')]
     assert rb.ci_args(d) == base
     (d / 'rubio_held.csv').write_text('url\n')
     (d / 'rubio_gt_missing.txt').write_text('')
     assert rb.ci_args(d, 'supplemental') == base + [
-        '--urls', f'{d}/rubio_held.csv', '--urls', f'{d}/rubio_gt_missing.txt',
+        '--urls', str(d / 'rubio_held.csv'), '--urls', str(d / 'rubio_gt_missing.txt'),
         '--supplemental-only']
     assert rb.ci_args(d, 'full_rescan')[-1] == '--full-rescan'
     with pytest.raises(ValueError):
