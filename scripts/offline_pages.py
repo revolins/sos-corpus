@@ -138,7 +138,7 @@ def write_url_list(index: OfflineIndex, path: Path) -> int:
     """The run's candidate list: canonical URLs only (no file names, no local paths)."""
     lines = ['# state.gov pages saved by hand in a browser (local_fetch --offline-pages);',
              '# rubio_backfill --offline-urls reads this list.', *index.urls]
-    Path(path).write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    Path(path).write_text('\n'.join(lines) + '\n', encoding='utf-8', newline='\n')
     return len(index.urls)
 
 

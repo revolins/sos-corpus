@@ -3,3 +3,7 @@
 local_fetch/ export-ignore
 # Bundles are machine-written: collapse them in PR diffs (still viewable).
 local_fetch/bundles/** linguist-generated=true
+# Bundles are checked by sha256 and replayed byte for byte: git must store them
+# exactly as written, never convert line endings (core.autocrlf on Windows turned
+# the CSVs' CRLF into LF and CI rejected the 2026-11-23 bundle).
+local_fetch/bundles/** -text

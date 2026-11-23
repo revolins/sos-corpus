@@ -127,6 +127,15 @@ def preflight(today: date, force: bool) -> str:
 
 # --- staging ----------------------------------------------------------------
 
+def checked_in_bytes(name: str, ref: str = 'HEAD') -> bytes:
+    """A seed file under data/ as the repository stores it, which is what CI checks
+    out. The working copy can differ (core.autocrlf turns LF into CRLF on Windows)."""
+    r = subprocess.run(['git', 'show', f'{ref}:data/{name}'], cwd=REPO, capture_output=True)
+    if r.returncode != 0:
+        raise Stop(f'data/{name} is not in the repository at {ref}')
+    return r.stdout
+
+
 def stage_release(release: Path) -> str:
     """Download what the weekly job downloads, into release/ (never modified after)."""
     if release.exists():
@@ -150,7 +159,7 @@ def stage_release(release: Path) -> str:
                             str(release), '--clobber'], cwd=REPO, capture_output=True, text=True)
         log(f'{name}: {"restored from " + tag if r.returncode == 0 else "not on the release"}')
     for name in B.CHECKED_IN:
-        shutil.copyfile(REPO / 'data' / name, release / name)
+        (release / name).write_bytes(checked_in_bytes(name))
     # Same ground-truth gap list the weekly job derives before scraping.
     gts = json.loads(sh('gh', 'release', 'list', '--limit', '100', '--json',
                         'tagName,createdAt') or '[]')
@@ -234,7 +243,7 @@ def write_manifest(bundle: Path, *, tag: str, commit: str, mode: str, rate_limit
         m['source'] = B.OFFLINE_SOURCE
         m['offline_pages'] = sum(1 for l in urls.splitlines() if l.startswith('http'))
     (bundle / 'manifest.json').write_text(json.dumps(m, indent=1, sort_keys=True) + '\n',
-                                          encoding='utf-8')
+                                          encoding='utf-8', newline='\n')
     return m
 
 
@@ -283,6 +292,18 @@ def pr_body(bundle: Path, m: dict) -> str:
     return '\n'.join(lines) + '\n'
 
 
+def committed_mismatches(bundle: Path, ref: str = 'HEAD') -> list[str]:
+    """Bundle files whose committed bytes differ from the files on disk (a line-ending
+    conversion would break every sha256 and the replay in CI)."""
+    bad = []
+    for p in sorted(q for q in bundle.rglob('*') if q.is_file()):
+        rel = p.relative_to(REPO).as_posix()
+        blob = subprocess.run(['git', 'show', f'{ref}:{rel}'], cwd=REPO, capture_output=True)
+        if blob.returncode != 0 or blob.stdout != p.read_bytes():
+            bad.append(p.relative_to(bundle).as_posix())
+    return bad
+
+
 def commit_and_push(bundle: Path, m: dict, push: bool) -> None:
     login = sh('gh', 'api', 'user', '-q', '.login')
     uid = sh('gh', 'api', 'user', '-q', '.id')
@@ -299,6 +320,11 @@ def commit_and_push(bundle: Path, m: dict, push: bool) -> None:
                  + (f'{m.get("offline_pages")} browser-saved pages, no requests sent; '
                     if m.get('mode') == 'offline' else '')
                  + 'replay-verified locally.')
+        bad = committed_mismatches(bundle)
+        if bad:
+            raise Stop(f'git did not store the bundle byte for byte ({len(bad)} file(s), e.g. '
+                       f'{bad[:3]}); CI would reject it. Check that .gitattributes has '
+                       f'"local_fetch/bundles/** -text". Not pushed; branch {branch} is local.')
         if push:
             sh('git', 'push', '-q', '-u', 'origin', branch)
             body = WORK / 'pr_body.md'

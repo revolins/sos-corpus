@@ -60,7 +60,8 @@ class RecordingSession:
         self.session = session or requests.Session()
         self.seq = 0
         self.clock_reads: list[float] = []
-        self._log = open(self.root / 'requests.jsonl', 'w', encoding='utf-8')
+        # newline='\n': the same bytes on every OS (Windows text mode would write CRLF).
+        self._log = open(self.root / 'requests.jsonl', 'w', encoding='utf-8', newline='\n')
 
     def get(self, url, **kw):
         self.seq += 1
@@ -99,7 +100,7 @@ class RecordingSession:
     def close(self) -> None:
         self._log.close()
         (self.root / 'clock.json').write_text(json.dumps(self.clock_reads) + '\n',
-                                              encoding='utf-8')
+                                              encoding='utf-8', newline='\n')
 
 
 class _ReplayResponse:
