@@ -1,0 +1,14 @@
+{
+ "completed": true,
+ "finished": "2026-11-23T20:22:49+00:00",
+ "requests_by_status": {
+  "200": 19
+ },
+ "requests_total": 19,
+ "robots_agent": null,
+ "run_id": "local-20261123T202241Z",
+ "source": "offline_pages",
+ "started": "2026-11-23T20:22:47+00:00",
+ "today": "2026-11-23",
+ "user_agent": null
+}

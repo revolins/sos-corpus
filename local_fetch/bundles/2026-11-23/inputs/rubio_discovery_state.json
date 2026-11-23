@@ -1,0 +1,816 @@
+{
+ "last_complete_floor": "2026-08-18",
+ "last_complete_run": "40317061944",
+ "last_run": {
+  "complete": false,
+  "date": "2026-11-02",
+  "incomplete_reasons": [
+   "1 duplicate slot(s) after re-walk"
+  ],
+  "mode": "incremental",
+  "run_id": "41457703869",
+  "since": "2026-08-18"
+ },
+ "sitemap_classified": {
+  "state.gov/2024-end-wildlife-trafficking-strategic-review": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/416-miles-of-resolve-dss-delivers-for-indias-foreign-minister-during-historic-shutdown": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/50th-anniversary-of-the-biological-weapons-convention": {
+   "date": "2026-11-02",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/accord-de-paix-entre-la-republique-democratique-du-congo-et-la-republique-du-rwanda": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/accord-de-partenariat-strategique-entre-le-gouvernement-des-etats-unis-damerique-et-le-gouvernement-de-la-republique-democratique-du-congo": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/acronyms-list-cybersecurity-exchange": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/alan-gabriel-nunez-herrera": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/alliance-for-afghan-womens-economic-resilience": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/an-update-on-securing-digital-infrastructure-in-developing-countries-financed-by-the-prc": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/an-update-to-plans-to-support-the-people-of-afghanistan": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/ana-gabriela-rubio-zea": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/anastacio-soto-vega-captured": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/antonio-indjai-new-target": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/carlos-omar-felix-gutierrez-captured": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/caro-quintero-rafael-captured": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/cliver-antonio-alcala-cordones-new-target": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/commercial-sector-participation-in-u-s-department-of-state-roundtables-on-commercial-space": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/contact-us-foreign-press-centers": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/countering-weaponized-migration-to-central-and-eastern-europe": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/cultural-property-advisory-committee-meeting-july-14-16-2026": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/cultural-property-advisory-committee-meeting-march-3-5-2026": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/cultural-property-advisory-committee-meeting-may-20-23-2025": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/cultural-property-advisory-committee-meeting-october-27-29-2026": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/cultural-property-advisory-committee-meeting-september-15-17-2025": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/current-partnerships-global-partnerships-unit": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/dario-antonio-usuga-david": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/declaracao-conjunta-do-secretario-de-estado-marco-rubio-e-do-secretario-de-saude-e-servico-social-robert-f-kennedy-jr": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/declaration-on-atlantic-cooperation": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/dependencies-and-areas-of-special-sovereignty": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/diplomatic-security-service-a-critical-link-for-fifa-world-cup-2026-security": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/diplomatic-security-service-brings-fugitive-to-justice-after-year-on-the-run-in-belize": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/diplomatic-security-service-catches-fugitive-in-vietnam-wanted-for-murder-in-the-united-states": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/diplomatic-security-service-catches-peruvian-call-center-criminal-wanted-for-fraud-and-extortion-in-the-united-states": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/diplomatic-security-service-dismantles-international-sex-trafficking-network": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/diplomatic-security-service-investigation-dismantles-peruvian-human-smuggling-network-to-the-united-states": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/diplomatic-security-service-investigation-exposes-counterfeit-passport-fraud-network-leads-to-10-year-federal-sentence": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/diplomatic-security-service-leads-u-s-security-at-milan-cortina-2026-winter-olympic-and-paralympic-games": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/diplomatic-security-service-operation-heartless-dismantles-colombian-human-smuggling-network-to-the-united-states": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/diplomatic-security-service-secures-80th-u-n-general-assembly-2": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/drl-nofo-developing-civilizational-bonds-democratic-resilience-and-rule-of-law-in-europe": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/drl-transshipment-supply-chain-tracing-notice-of-funding-opportunity": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/dss-joins-27th-annual-kringle-detail-strengthening-community-partnerships-through-holiday-cheer": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/dss-miami-field-office-briefs-journalists-on-countering-transnational-crime-in-the-western-hemisphere": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/dss-special-agent-at-u-s-consulate-guayaquil-awarded-navy-civilian-service-achievement-medal": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/dss-trained-airport-officials-catch-ecuadorian-with-fake-visa-attempting-illegal-u-s-entry": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/east-asia-and-pacific-schools-at-post": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/emergency-assistance-for-human-rights-defenders": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/end-use-monitoring-of-u-s-origin-defense-articles": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/endorsements-for-doreen-bogdan-martin": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/endorsements-for-jennifer-warren": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/entretien-telephonique-du-secretaire-detat-rubio-avec-la-ministre-canadienne-des-affaires-etrangeres-anand": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/entretien-telephonique-du-secretaire-detat-rubio-avec-le-ministre-francais-des-affaires-etrangeres-m-barrot": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/external-content/south-florida-man-pleads-guilty-to-posting-online-threats-against-secretary-of-state-marco-rubio-and-special-envoy-kristi-noem": {
+   "date": "2026-11-02",
+   "reason": "too_short"
+  },
+  "state.gov/fact-sheet-provision-of-humanitarian-assistance-to-cuba": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/fact-sheet-u-s-department-of-state-section-515-582-list": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/fact-sheets-for-2022-trafficking-in-persons-report": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/fact-sheets-for-2023-trafficking-in-persons-report": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/fact-sheets-for-2024-trafficking-in-persons-report": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/fausto-isidro-meza-flores": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/federal-assistance-policies-appeals": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/felix-antonio-munoz-lascarro": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/foreign-assistance-resource-library": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/freedom-250-u-s-india-security-in-motion": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/freedom-tech-excellence-program-ftep": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/frequently-asked-questions-cybersecurity-exchange": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/getting-ahead-of-the-adversaries": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/global-digital-threat-lab": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/haroldo-waldemar-lorenzana-terraza": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/how-to-submit-information-for-the-2025-trafficking-in-persons-report": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/how-to-submit-information-for-the-2026-trafficking-in-persons-report": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/how-zero-trust-architecture-can-elevate-your-security": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/hugo-armando-carvajal-barrios-captured": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/humberto-beltran-cuen-captured": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/imposing-sanctions-in-response-to-the-iccs-illegitimate-actions-targeting-the-united-states-and-israel": {
+   "date": "2026-11-02",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/independent-states-in-the-world": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/international-religious-freedom-fund-i-reff-emergency-assistance": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/irf-fy25-nigeria-documentation-and-accountability-for-religious-freedom-abuses": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/irf-fy25-nigeria-strengthening-capacity-of-the-legal-community": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/ismael-mario-zambada-garcia": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/ivan-archivaldo-guzman-salazar": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/jesus-alfredo-guzman-salazar": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/jesus-alfredo-itriago-new-target": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/jorge-humberto-figueroa-benitez": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/jose-alfredo-hurtado-olascoaga": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/jose-benito-cabrera-cuevas": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/juan-carlos-montes-bobadilla": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/juan-carlos-valencia-gonzalez": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/juan-diego-palta-montero": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/juan-jose-esparragoza-moreno": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/juan-jose-farias-alvarez": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/juan-jose-ponce-felix": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/juan-reyes-mejia-gonzalez": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/julio-alberto-castillo-rodriguez": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/keeping-america-safe-dss-collaborates-with-federal-partners-to-advance-c-uas-technology": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/luis-enrique-barragan-chavez": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/luis-javier-benitez-espinoza": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/mario-alberto-jimenez-castro": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/maximum-pressure-sanctions-on-illicit-traders-of-iranian-petroleum-and-petrochemical-products": {
+   "date": "2026-11-02",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/meeting-of-the-federal-advisory-committee-on-international-postal-and-delivery-services-august-28-2025": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/meeting-of-the-federal-advisory-committee-on-international-postal-and-delivery-services-july-29-2026": {
+   "date": "2026-11-02",
+   "reason": "other_byline"
+  },
+  "state.gov/meetings-of-the-advisory-committee-on-international-postal-and-delivery-services": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/middle-east-regional-cooperation-merc-notice-of-funding-opportunity-nofo-dfop0019227": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/miguel-angel-pascuas-santos": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/milton-de-jesus-toncel-redondo": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/nemesio-ruben-oseguera-cervantes-el-mencho-2": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/nestor-isidro-perez-salas-captured": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/network-for-entrepreneurship-and-technology-next": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/notice-of-funding-opportunity-nofo-drl-countering-transnational-repression-through-evidence-based-research": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/notice-of-funding-opportunity-nofo-drl-leveraging-academic-institutions-and-judicial-professional-bodies-to-document-tnr": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/notice-of-funding-opportunity-nofo-strengthening-community-backed-governance-to-advance-stability-and-peace-in-burma": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/notice-of-funding-opportunity-nofo-track-2-0-peacebuilding-and-dialogue-support": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/ofm-new-york-regional-office": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/oscar-noe-medina-gonzalez": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/peace-agreement-between-the-democratic-republic-of-the-congo-and-the-republic-of-rwanda": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/pedro-luis-martin-olivares-new-target": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/promoting-responsible-investment-and-rights-respecting-production-models": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/releases/bureau-of-political-military-affairs/2026/10/australia-tomahawk-capability-development": {
+   "date": "2026-10-26",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/releases/bureau-of-political-military-affairs/2026/10/egypt-javelin-missiles": {
+   "date": "2026-10-26",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/releases/bureau-of-political-military-affairs/2026/10/kuwait-patriot-missile-repair-and-return": {
+   "date": "2026-10-26",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/releases/bureau-of-political-military-affairs/2026/10/the-netherlands-common-infrared-countermeasure-systems": {
+   "date": "2026-10-26",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/releases/bureau-of-political-military-affairs/2026/10/united-arab-emirates-advanced-precision-kill-weapon-system-ii-guidance-sections": {
+   "date": "2026-10-26",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/releases/office-of-the-special-envoy-to-monitor-and-combat-anti-semitism/2026/11/ambassador-rabbi-yehuda-kaploun-remarks-at-the-ihra-buenos-aires-plenary-preliminary-conference": {
+   "date": "2026-11-02",
+   "reason": "other_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/08/diplomatic-security-leads-investigation-resulting-in-guilty-plea-for-threats-against-secretary-of-state-marco-rubio": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/09/secretary-rubio-and-colombian-foreign-minister-bula-sign-arrangements-on-critical-minerals-and-civil-nuclear-cooperation": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/ad-hoc-coalition-to-defeat-isis-meeting-on-iraq-and-syria": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/c51-historic-partnership-prosperous-future": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/co-chairs-statement-on-the-7th-u-s-asean-cyber-policy-dialogue": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/deputy-secretary-landaus-travel-to-paraguay-and-argentina": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/designation-of-fijian-resident-for-involvement-in-significant-corruption-on-behalf-of-china-based-actors": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/disrupting-cartel-del-norestes-financial-network": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/imposing-sanctions-on-the-international-criminal-court-2": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/imposing-sanctions-to-protect-americans-from-intellectual-property-theft": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/imposing-sanctions-to-protect-americans-from-intellectual-property-theft-fact-sheet": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/joint-statement-in-support-of-bolivias-efforts-to-fight-corruption-and-narco-trafficking": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/joint-statement-on-countering-iranian-terrorist-activity-in-the-western-hemisphere": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/joint-statement-on-the-anniversary-of-the-snapback-of-un-restrictions-on-and-related-to-iran": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/joint-statement-on-the-u-s-austria-strategic-dialogue": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/joint-statement-on-the-u-s-greece-strategic-dialogue": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/joint-statement-on-the-u-s-japan-technology-prosperity-deal": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/joint-statement-on-the-united-kingdoms-attribution-of-irans-involvement-in-attempted-terrorist-attack-at-raf-fairford": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/joint-statement-on-united-states-liechtenstein-strategic-and-economic-partnership-dialogue": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/nicaraguas-denial-of-agrement": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/on-the-five-year-anniversary-of-the-unjust-detention-of-u-s-embassy-sanaa-staff": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/operation-economic-outcast-sanctions-on-irans-shadow-fleet-network": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/operation-economic-outcast-targets-illicit-funding-in-irans-rail-and-automotive-sectors": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/public-schedule-october-13-2026": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/reconciliation-talks-deliver-concrete-progress-for-venezuelas-democratic-transition": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/release-of-the-2026-trafficking-in-persons-report": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/second-u-s-japan-free-and-open-indo-pacific-foip-dialogue": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/secretary-of-state-rubios-call-with-uk-foreign-secretary-miliband": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/secretary-rubio-announces-u-s-participation-in-world-expo-2030-in-riyadh-saudi-arabia": {
+   "date": "2026-11-02",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/secretary-rubios-meetings-with-portuguese-prime-minister-montenegro-and-foreign-minister-rangel": {
+   "date": "2026-10-26",
+   "reason": "third_person"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/state-department-announces-feed-the-future-innovation-labs-to-support-agriculture-research": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/statement-on-the-fourth-united-states-singapore-cyber-dialogue": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/the-united-states-mobilizes-immediate-response-to-the-panama-earthquakes": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/u-s-intensifies-operation-economic-outcast-against-irans-shadow-fleet-networks-fact-sheet": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/u-s-pacific-islands-conference-of-police-ministers-copmin-securing-the-pacific-together": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/u-s-paraguay-cooperation-to-advance-prosperity-and-security": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/u-s-statement-on-increased-tensions-between-ethiopia-and-eritrea": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/united-states-and-denmark-sign-maritime-cooperation-memorandum-of-understanding": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/united-states-and-japan-extend-science-and-technology-agreement-indefinitely": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/united-states-and-zambia-sign-five-year-global-health-partnership-under-the-trump-administrations-america-first-global-health-strategy": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/united-states-cuts-off-hamas-financing-network": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/united-states-hosts-caribbean-dialogue-to-advance-shared-security-and-prosperity": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/united-states-welcomes-uzbekistans-signing-of-the-artemis-accords": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/10/unmasking-service-providers-facilitating-irans-shadow-fleet-operations": {
+   "date": "2026-10-26",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-of-the-spokesman/2026/11/public-schedule-november-2-2026": {
+   "date": "2026-11-02",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/releases/office-to-monitor-and-combat-trafficking-in-persons/2026/10/determination-under-section-110b20-of-the-trafficking-victims-protection-act-of-2000-as-amended": {
+   "date": "2026-10-26",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/releases/office-to-monitor-and-combat-trafficking-in-persons/2026/10/memorandum-of-justification-consistent-with-section-110b2d-of-the-trafficking-victims-protection-act-of-2000-as-amended-tvpa-2": {
+   "date": "2026-10-26",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/research-application-tracking-system": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/resources-bureau-of-human-resources": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/resources-office-of-overseas-schools": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/rodolfo-mcturk-mora-new-target": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/sanctioning-additional-entities-that-have-traded-in-irans-petroleum": {
+   "date": "2026-11-02",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/sanctioning-entities-that-have-traded-in-irans-petroleum": {
+   "date": "2026-11-02",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/sanctioning-service-providers-that-facilitate-irans-crude-oil-trade": {
+   "date": "2026-11-02",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/sanctions-on-irans-oil-network-to-further-impose-maximum-pressure-on-iran": {
+   "date": "2026-11-02",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/secretary-rubios-countries-visited-and-mileage": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/seeking-private-sector-advisors-for-the-united-states-delegation-to-the-64th-session-of-the-committee-on-the-peaceful-uses-of-outer-space-uncopuos-legal-subcommittee-lsc": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/sergio-antonio-duarte-frias-captured": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/seuxis-pausias-hernandez-solarte": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/silvano-francisco-mariano-captured": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/solicitation-for-federal-register-notice-12609-seeking-private-sector-advisors-for-the-united-states-delegation-to-the-68th-session-of-the-committee-on-the-peaceful-uses-of-outer-space-uncopuos": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/south-and-central-asia-schools-at-post": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/tareck-zaidan-el-aissami-maddah-new-target": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  },
+  "state.gov/the-status-of-balances-of-projects-and-activities-funded-by-the-chips-for-america-international-technology-security-and-innovation-itsi-fund": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/tip-office-project-descriptions": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/transition-center-courses-and-webinars-by-date": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/treaties-pending-in-the-senate": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/u-s-department-of-state-open-data-plan-2025": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/u-s-department-of-stateopen-data-plan": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/u-s-sanctions-six-individuals-for-undermining-hong-kongs-autonomy": {
+   "date": "2026-11-02",
+   "reason": "spokesperson_byline"
+  },
+  "state.gov/u-s-security-cooperation-with-vietnam": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/understanding-and-preventing-phishing-attacks": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/understanding-the-dangers-of-social-engineering": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/understanding-zero-trust-architecture": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/united-states-and-kenya-sign-five-year-2-5-billion-health-cooperation-framework": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/unknown-assassins-responsible-for-the-january-2025-murder-of-a-u.s.-federal-witness-against-ryan-wedding-in-colombia": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/updated-guidance-on-operations-during-a-lapse-in-appropriations": {
+   "date": "2026-11-02",
+   "reason": "no_byline_untrusted"
+  },
+  "state.gov/wilver-villegas-palomino-2": {
+   "date": "2026-11-02",
+   "reason": "pre_tenure_date"
+  }
+ }
+}

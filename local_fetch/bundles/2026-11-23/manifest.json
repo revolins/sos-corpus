@@ -1,0 +1,60 @@
+{
+ "base_tag": "v2026.11.02",
+ "ci_args": [
+  "--enriched",
+  "data/corpus.csv",
+  "--output",
+  "data/rubio_new.csv",
+  "--pending",
+  "data/rubio_pending.csv",
+  "--discovery-state",
+  "data/rubio_discovery_state.json",
+  "--exclusions",
+  "data/rubio_coverage_exclusions.csv",
+  "--offline-urls",
+  "data/rubio_offline_urls.txt",
+  "--supplemental-only"
+ ],
+ "commit": "c62608165f4379f3fc9da7dd5b82bc2b8d0e697e",
+ "corpus_sha256": "b1268149650af3586ef396140533355107636b73d4d3d87c9d2d590cd53571af",
+ "created": "2026-11-23T20:22:49+00:00",
+ "env": {
+  "packages": {
+   "beautifulsoup4": "4.15.0",
+   "charset-normalizer": "3.5.2",
+   "ftfy": "6.3.1",
+   "html5lib": null,
+   "lxml": null,
+   "requests": "2.34.2",
+   "soupsieve": "4.1.1",
+   "wcwidth": "0.9.4"
+  },
+  "python": "3.11"
+ },
+ "extra_args": [
+  "--rate-limit",
+  "5"
+ ],
+ "format": 1,
+ "inputs": {
+  "rubio_coverage_exclusions.csv": "a3b91857d2cc4ca67b66c10b4e8625770dbd0ab019fb1e1d15ef5da75bd9ce62",
+  "rubio_discovery_state.json": "e64ccdd1b358c3f94ea1a88226039b2951ec8a7c7c4092be3a228f3543c1b62b",
+  "rubio_gt_missing.txt": "44dfed8e703ed286eaec088e46b83d6f8973136541757bd2b40a1270fc98079c",
+  "rubio_held.csv": "01db37b66317927eed1a2f406913be9dbc44c21de101356c8fbbfe793fd74276",
+  "rubio_offline_urls.txt": "085ca203ce58a451863656218c4fb87bc161865b70845d30c2acefe170deb30a",
+  "rubio_pending.csv": "249f64ba96ee1eb4eed0b5264be9ecfa57c8baed5b446e046cca5edebb6304bd",
+  "rubio_supplemental_urls.txt": "0859b92e479e8167e9ae962815f07c25553b8194c1da8d35b043fabec2d834d3"
+ },
+ "mode": "offline",
+ "offline_pages": 35,
+ "outputs": {
+  "rubio_backfill_summary.json": "ce6d6e5d8fff71f7ea8f134fe390850e9f5fd31e05ed689db9af3a33d0cb41c5",
+  "rubio_discovery_state.json": "0ac0098023c691168c79531788e8a6eaca8c1683ac0e154f7a85d51a3d9dfa2e",
+  "rubio_listing_snapshot.csv": "376fbafe47d1e657dfec8999d48a5d5426d4a50aab0beca8968d9c09328a6915",
+  "rubio_new.csv": "5d0b0a859c38f38454893d53f4a9475afbf18b8e5e9a0733e5445524a84b5ffd",
+  "rubio_pending.csv": "249f64ba96ee1eb4eed0b5264be9ecfa57c8baed5b446e046cca5edebb6304bd",
+  "rubio_skipped.csv": "6086c706eb402d30a75fe4bc3514d87d75dfd05ac1812dddbd5eb8eef73bfb62"
+ },
+ "pythonhashseed": "0",
+ "source": "offline_pages"
+}
