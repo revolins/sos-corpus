@@ -268,6 +268,18 @@ def test_stage_direction_via_translation_rubio_only():
                                   rubio_path=True).startswith('Thank you')
 
 
+def test_combined_audience_reactions_are_stripped():
+    s = ('the greatest nation in the history of the world. (Applause and cheering.) Thank you. '
+         'Go Gators. (Laughter and cheers.) Remember, I did land use. (Laughter.) (Applause, '
+         'cheers & clapping) (Sustained applause.) (Laughter and applause.) Done here.')
+    out = strip_stage_directions(s)
+    assert '(' not in out
+    assert out.startswith('the greatest nation') and out.endswith('Done here.')
+    # Not a reaction: kept.
+    keep = 'He said (and applause is not a word list here) that we would act.'
+    assert strip_stage_directions(keep) == keep
+
+
 def test_footnote_errata_layouts():
     blk = ('He was here\n[1]\nthis week and it was extraordinarily\n[2]\nbusy.\n'
            'SECRETARY RUBIO:\nThanks.\n# # #\n[1] Washington D.C. Secretary Rubio met with '
