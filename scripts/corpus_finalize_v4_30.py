@@ -280,10 +280,13 @@ _RELEASED_ON_RE = re.compile(
 _BOUNDARY_DOC_CODE_RE = re.compile(r'\b\d{4}/\d{3,4}\b')
 
 # Stage direction patterns — stripped from SOS Text only (not Natural Text / Raw Text)
+# One reaction, or several joined by and / , / & / ("(Applause and cheering.)",
+# "(Laughter and cheers.)": 2026-11-23, the Federalist Society speech was held by
+# Check AK because only "(Laughter and applause.)" was stripped here).
+_AUDIENCE_WORD = (r'(?:sustained\s+applause|laughter\s+off[- ]?mike|laughter|applause|'
+                  r'cheers?|cheering|clapping|booing)')
 _STAGE_DIR_AUDIENCE_RE = re.compile(
-    r'\(\s*(?:laughter(?:\s+and\s+applause)?|applause(?:\s+and\s+laughter)?|'
-    r'sustained\s+applause|cheers?|cheering|clapping|booing|'
-    r'laughter\s+off[- ]?mike)\s*\.?\s*\)',
+    rf'\(\s*{_AUDIENCE_WORD}(?:\s*(?:,|&|/|\band\b)\s*{_AUDIENCE_WORD})*\s*\.?\s*\)',
     re.IGNORECASE,
 )
 _STAGE_DIR_INAUDIBLE_RE = re.compile(

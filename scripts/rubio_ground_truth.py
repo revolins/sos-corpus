@@ -54,7 +54,6 @@ import subprocess
 import sys
 import time
 from datetime import date, datetime, timezone
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 from xml.etree import ElementTree
@@ -78,6 +77,7 @@ from rubio_backfill import (
     _flatten_jsonld,
     _make_soup,
     _parse_date,
+    _retry_after_seconds,
     load_existing_urls,
 )
 from speech_recover import (
@@ -329,25 +329,6 @@ def _jitter(url: str, span: float) -> float:
         return 0.0
     h = int(hashlib.sha1(url.encode('utf-8')).hexdigest()[:8], 16)
     return span * (h / 0x100000000)
-
-
-def _retry_after_seconds(value: str, now: float | None = None) -> float | None:
-    """Retry-After as delta-seconds or HTTP-date; None when absent/unparseable."""
-    value = (value or '').strip()
-    if not value:
-        return None
-    if value.isdigit():
-        return float(value)
-    try:
-        when = parsedate_to_datetime(value)
-    except (TypeError, ValueError):
-        return None
-    if when is None:
-        return None
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    ref = now if now is not None else time.time()
-    return max(0.0, when.timestamp() - ref)
 
 
 class PoliteFetcher:

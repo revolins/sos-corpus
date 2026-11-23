@@ -8,11 +8,19 @@ A bundle is local_fetch/bundles/<YYYY-MM-DD>/:
                  rubio_discovery_state.json and rubio_gt_missing.txt (whichever existed),
                  plus the checked-in rubio_coverage_exclusions.csv and
                  rubio_supplemental_urls.txt
-  http/          every HTTP exchange with state.gov (scripts/http_record.py)
+  http/          every HTTP exchange with state.gov (scripts/http_record.py); for an
+                 offline bundle, every saved page the run read, as it was served
   outputs/       what rubio_backfill.py wrote: rubio_new.csv, the state files, sidecars
 
 The corpus itself is not in the bundle. It is the base release's corpus asset,
 identified by tag and sha256.
+
+An OFFLINE bundle (local_fetch.py --offline-pages) is built from state.gov pages a
+person saved in a browser, because state.gov refuses automated clients. Its mode is
+'offline', its inputs add rubio_offline_urls.txt (the saved pages' canonical URLs),
+and manifest.json and http/meta.json say source: offline_pages with no User-Agent,
+since no request was sent. Every other check is the same: the replay re-parses the
+recorded pages and must reproduce every output byte for byte.
 
 The checks (verify()) are used by local_fetch/tests/test_bundle_alignment.py, which
 the driver runs before committing, and by `bundle.py import` in the weekly workflow,
@@ -57,7 +65,10 @@ STATE_INPUTS = ('rubio_pending.csv', 'rubio_held.csv', 'rubio_discovery_state.js
                 'rubio_gt_missing.txt')
 # Checked-in seed files, read from the repository's data/.
 CHECKED_IN = ('rubio_coverage_exclusions.csv', 'rubio_supplemental_urls.txt')
-INPUTS = STATE_INPUTS + CHECKED_IN
+# Made for the run and carried only by the bundle (nothing on the release to match).
+BUNDLE_ONLY = ('rubio_offline_urls.txt',)
+INPUTS = STATE_INPUTS + CHECKED_IN + BUNDLE_ONLY
+OFFLINE_SOURCE = 'offline_pages'
 OUTPUTS = ('rubio_new.csv', 'rubio_pending.csv', 'rubio_discovery_state.json',
            'rubio_skipped.csv', 'rubio_listing_snapshot.csv', 'rubio_backfill_summary.json')
 OPTIONAL_OUTPUTS = ('rubio_stuck.csv',)
@@ -156,7 +167,9 @@ def run_backfill(data_dir: Path, mode: str, extra: list[str], *,
     import rubio_backfill as rb
     cmd = [sys.executable, str(SCRIPTS / 'rubio_backfill.py'), *rb.ci_args(data_dir, mode),
            *extra]
-    env = dict(os.environ, PYTHONHASHSEED=HASH_SEED)
+    # PYTHONIOENCODING: on Windows a redirected stdout is cp1252 and the scraper's log
+    # lines carry arrows and accents. Output files set their own encoding.
+    env = dict(os.environ, PYTHONHASHSEED=HASH_SEED, PYTHONIOENCODING='utf-8')
     for k in ('GITHUB_OUTPUT', 'GITHUB_RUN_ID'):
         env.pop(k, None)
     if log is None:
@@ -222,7 +235,7 @@ def check_base(bundle: Path, data_dir: Path, latest_tag: str) -> list[str]:
     corpus = data_dir / 'corpus.csv'
     if not corpus.exists() or sha256(corpus) != m.get('corpus_sha256'):
         problems.append('corpus.csv is not the corpus the bundle was fetched against')
-    for name in INPUTS:
+    for name in STATE_INPUTS + CHECKED_IN:
         mine, now = bundle / 'inputs' / name, data_dir / name
         if mine.exists() != now.exists():
             problems.append(f'{name}: {"in" if mine.exists() else "not in"} the bundle, '
@@ -255,8 +268,21 @@ def check_args(bundle: Path) -> list[str]:
         problems.append(f'extra arguments must be exactly --rate-limit N with N >= '
                         f'{MIN_RATE_LIMIT:g}: {extra}')
     meta = json.loads((bundle / 'http' / 'meta.json').read_text(encoding='utf-8'))
-    if meta.get('user_agent') != rb._HEADERS['User-Agent']:
-        problems.append(f'User-Agent was {meta.get("user_agent")!r}, not the crawler\'s own')
+    if m.get('mode') == 'offline':
+        # Pages saved by a person: the bundle must say so everywhere, and claim no crawl.
+        if m.get('source') != OFFLINE_SOURCE or meta.get('source') != OFFLINE_SOURCE:
+            problems.append(f'an offline bundle must say source: {OFFLINE_SOURCE} in '
+                            f'manifest.json and http/meta.json')
+        if meta.get('user_agent') is not None:
+            problems.append('an offline bundle sent no request, so it must not record a '
+                            'User-Agent')
+        if not (bundle / 'inputs' / 'rubio_offline_urls.txt').exists():
+            problems.append('an offline bundle needs inputs/rubio_offline_urls.txt')
+    else:
+        if m.get('source') == OFFLINE_SOURCE or meta.get('source') == OFFLINE_SOURCE:
+            problems.append(f'source is {OFFLINE_SOURCE} but the mode is {m.get("mode")!r}')
+        if meta.get('user_agent') != rb._HEADERS['User-Agent']:
+            problems.append(f'User-Agent was {meta.get("user_agent")!r}, not the crawler\'s own')
     if not meta.get('completed'):
         problems.append('the recorded run did not complete')
     return problems
@@ -377,9 +403,14 @@ def import_bundle(bundle: Path, data_dir: Path, latest_tag: str) -> int:
     s = json.loads((bundle / 'outputs' / 'rubio_backfill_summary.json').read_text(encoding='utf-8'))
     m = load_manifest(bundle)
     meta = json.loads((bundle / 'http' / 'meta.json').read_text(encoding='utf-8'))
-    note = (f'Fetched from a maintainer\'s computer (local_fetch bundle {bundle.name}, '
-            f'{meta.get("requests_total", 0)} requests to state.gov, commit '
-            f'{m["commit"][:12]}); replay-verified in CI.')
+    if m.get('mode') == 'offline':
+        note = (f'Built from {m.get("offline_pages", meta.get("requests_total", 0))} state.gov '
+                f'pages saved by hand in a browser (local_fetch bundle {bundle.name}, no '
+                f'automated requests, commit {m["commit"][:12]}); replay-verified in CI.')
+    else:
+        note = (f'Fetched from a maintainer\'s computer (local_fetch bundle {bundle.name}, '
+                f'{meta.get("requests_total", 0)} requests to state.gov, commit '
+                f'{m["commit"][:12]}); replay-verified in CI.')
     _gh_output(rows_written=s.get('written', 0), fetched=s.get('fetched', 0),
                fetch_failed=s.get('failed', 0),
                skipped=sum((s.get('skipped_by_reason') or {}).values()),
