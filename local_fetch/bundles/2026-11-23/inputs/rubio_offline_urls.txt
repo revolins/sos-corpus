@@ -1,0 +1,37 @@
+# state.gov pages saved by hand in a browser (local_fetch --offline-pages);
+# rubio_backfill --offline-urls reads this list.
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/austria-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/commemorating-the-first-anniversary-of-the-kuala-lumpur-peace-accords
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/czech-republic-national-day
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/designation-of-libyan-judicial-police-official-for-involvement-in-torture-and-cruel-inhumane-and-degrading-treatment
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/kazakhstan-republic-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/saint-vincent-and-the-grenadines-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/secretary-of-state-marco-rubio-and-finnish-foreign-minister-elina-valtonen-at-a-memorandum-of-understanding-signing-ceremony-on-a-critical-minerals-framework-and-a-technology-prosperity-deal
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/secretary-of-state-marco-rubio-and-saudi-foreign-minister-prince-faisal-bin-farhan-al-saud-at-an-expo-2030-riyadh-participation-contract-signing-ceremony
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/secretary-of-state-marco-rubio-and-u-s-ambassador-to-india-sergio-gor-with-raj-chengappa-of-india-today
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/secretary-of-state-marco-rubio-at-a-plenary-session-on-geopolitical-issues
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/secretary-of-state-marco-rubio-at-a-press-availability-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/secretary-of-state-marco-rubio-at-the-g20-foreign-ministers-meeting-welcome-reception
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/secretary-of-state-marco-rubio-on-venezuela
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/secretary-rubio-and-hungarian-fm-orban-at-a-mou-signing-ceremony-on-energy-infrastructure-and-regional-energy-security-and-on-law-enforcement-cooperation-and-information-exchange
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/turkiye-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/10/zambia-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/angola-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/antigua-and-barbuda-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/cambodia-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/congratulating-grenadas-prime-minister-dickon-mitchell-on-his-reelection
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/dominica-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/federated-states-of-micronesia-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/foreign-terrorist-designations-of-guatemalan-groups
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/further-sanctions-on-the-cuban-regimes-foreign-military-support-and-illicit-revenue-networks
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/latvia-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/lebanon-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/monaco-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/oman-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/panama-national-day-2
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/secretary-of-state-marco-rubio-at-the-federalist-societys-2026-national-lawyers-convention
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/secretary-of-state-marco-rubio-remarks-to-the-press-21
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/secretary-of-state-marco-rubio-remarks-to-the-press-22
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/secretary-of-state-marco-rubio-remarks-to-the-press-23
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/secretary-of-state-marco-rubio-remarks-to-the-press-24
+https://www.state.gov/releases/office-of-the-spokesman/2026/11/tonga-national-day-2
